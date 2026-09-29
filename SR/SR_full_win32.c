@@ -525,10 +525,15 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
                 bound = section_bound_list_Insert(Entry, offset);
                 if (bound != NULL) bound->end = 1;
 
+            #if (OUTPUT_TYPE == OUT_LLASM)
+                // the llasm translator translates iretd itself
+                output->str = strdup(ud_insn_asm(&ud_obj));
+            #else
                 // this won't work for retf 0xfffc or higher
                 strcpy(cResult, "push dword [esp+8]\npopfd\nretn 8");
 
                 output->str = strdup(cResult);
+            #endif
 
                 finished = 1;
 

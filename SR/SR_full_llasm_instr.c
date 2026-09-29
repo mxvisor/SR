@@ -3566,6 +3566,23 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 OUTPUT_PARAMSTRING("INT %i\n", intno);
             }
             break;
+        case UD_Iiretd:
+            {
+                /* all flags modified */
+
+                // push dword [esp+8] / popfd / retn 8, as the other backends get it:
+                // POPFD is a call, so no temporary may be live across it
+                last_instruction = -1;
+
+                OUTPUT_STRING("add tmpadr, esp, 8\n");
+                OUTPUT_STRING("load tmp1, tmpadr, 4\n");
+                OUTPUT_STRING("PUSH tmp1\n");
+                OUTPUT_STRING("POPFD\n");
+                OUTPUT_STRING("POP tmp1\n");
+                OUTPUT_STRING("add esp, esp, 8\n");
+                OUTPUT_STRING("tcall tmp1\n");
+            }
+            break;
         case UD_Ija:
         case UD_Ijae:
         case UD_Ijb:
