@@ -464,7 +464,8 @@ int SR_write_output(const char *fname)
 
                     if (!has_data) continue;
                 }
-                fprintf(EF.fout, "\ndatasegment %s constant\n", section[EF.Entry].name);
+                // code_writable (SR.cfg): the program stores into data in its code sections (DOS4GW's flat DS allows it)
+                fprintf(EF.fout, "\ndatasegment %s%s\n", section[EF.Entry].name, (code_writable)?"":" constant");
                 break;
             case ST_DATA:
             case ST_STACK:

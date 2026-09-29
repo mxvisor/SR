@@ -203,6 +203,17 @@ static void read_cfg(void)
                 ebp_dword_aligned = 0;
             }
         }
+        else if ( strcasecmp(str, "code_writable") == 0 ) /* str equals "code_writable" */
+        {
+            if ( strcasecmp(param, "yes") == 0 ) /* param equals "yes" */
+            {
+                code_writable = 1;
+            }
+            else if ( strcasecmp(param, "no") == 0 ) /* param equals "no" */
+            {
+                code_writable = 0;
+            }
+        }
     }
 
     fclose(f);
@@ -252,6 +263,7 @@ static void initialize_values(void)
 
 	esp_dword_aligned = 0;
 	ebp_dword_aligned = 0;
+	code_writable = 0;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 32);
@@ -292,6 +304,7 @@ int main (int argc, char *argv[])
 
 	fprintf(stderr, "esp dword aligned: %s\n", (esp_dword_aligned)?"yes":"no");
 	fprintf(stderr, "ebp dword aligned: %s\n", (ebp_dword_aligned)?"yes":"no");
+	fprintf(stderr, "code writable: %s\n", (code_writable)?"yes":"no");
 
 	input_name = NULL;
 	output_name = NULL;

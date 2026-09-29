@@ -59,6 +59,7 @@ EXTERNAL_VARIABLE char *data_to_code_fixups_name;
 
 EXTERNAL_VARIABLE int esp_dword_aligned;
 EXTERNAL_VARIABLE int ebp_dword_aligned;
+EXTERNAL_VARIABLE int code_writable;                    // the program writes into its code sections
 
 #ifdef __cplusplus
 }
