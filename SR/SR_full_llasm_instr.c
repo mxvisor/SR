@@ -3951,6 +3951,62 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ijcxz:
+        case UD_Ijecxz:
+            {
+                /* no flags affected */
+
+                uint32_t address;
+                extrn_data *extrnadr;
+                int backward;
+
+                last_instruction = 1;
+
+                if (ud_obj.operand[0].size == 32)
+                {
+                    backward = (ud_obj.operand[0].lval.sdword < 0)?1:0;
+                    address = ud_obj.operand[0].lval.sdword + (uint32_t) ud_obj.pc;
+                }
+                else
+                {
+                    backward = (ud_obj.operand[0].lval.sbyte < 0)?1:0;
+                    address = ud_obj.operand[0].lval.sbyte + (uint32_t) ud_obj.pc;
+                }
+
+                extrnadr = SR_disassemble_find_proc(Entry, address);
+
+                if (extrnadr != NULL)
+                {
+                    strcpy(cAddress, extrnadr->proc);
+                }
+                else
+                {
+                    SR_get_label(cAddress, address);
+                }
+
+                if (backward)
+                {
+                    OUTPUT_STRING("ACTION_CONDITIONAL_JUMP_BACKWARD\n");
+                }
+                else
+                {
+                    OUTPUT_STRING("ACTION_CONDITIONAL_JUMP_FORWARD\n");
+                }
+
+                if (ud_obj.mnemonic == UD_Ijcxz)
+                {
+                    // jcxz (address-size prefix) tests cx only
+                    OUTPUT_STRING("and tmp1, ecx, 0xffff\n");
+                    OUTPUT_PARAMSTRING("ctcallz tmp1, %s\n", cAddress);
+                }
+                else
+                {
+                    OUTPUT_PARAMSTRING("ctcallz ecx, %s\n", cAddress);
+                }
+
+                SR_add_label(Entry, cur_ofs + decoded_length);
+            }
+            break;
         case UD_Ijmp:
             {
                 /* no flags affected */
