@@ -1860,6 +1860,36 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             }
                         }
                     }
+                    else if (ud_obj.operand[0].size == 16)
+                    {
+                        if (ud_obj.operand[1].type == UD_OP_REG)
+                        {
+                            SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_RW, ZERO_EXTEND, &memadr);
+
+                            SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP1, READ16TO32ZERO);
+
+                            SR_llasm_helper_adc_16(ud_obj.mnemonic, LR_TMP1, X86162LLREG(ud_obj.operand[1].base), 0);
+
+                            SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
+                        }
+                        else if (ud_obj.operand[1].type == UD_OP_IMM)
+                        {
+                            if (fixup[1] == NULL)
+                            {
+                                int32_t value;
+
+                                value = ((int32_t) SR_disassemble_get_value(&(ud_obj.operand[1]), SIGN_EXTEND)) << 16;
+
+                                SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_RW, ZERO_EXTEND, &memadr);
+
+                                SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP1, READ16TO32ZERO);
+
+                                SR_llasm_helper_adc_16(ud_obj.mnemonic, LR_TMP1, LR_NONE, value);
+
+                                SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
+                            }
+                        }
+                    }
                 }
             }
             break;
