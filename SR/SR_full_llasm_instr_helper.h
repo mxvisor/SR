@@ -1692,7 +1692,7 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
     const char *instr;
     enum ll_regs result_reg;
 
-    int retval;
+    int retval, emitted;
 
     if (mnemonic == UD_Ior)
     {
@@ -1708,12 +1708,15 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
     }
 
     result_reg = dst;
+    emitted = 1;
 
     if (src2 != LR_NONE)
     {
         if ((src1 == src2) && ((mnemonic == UD_Itest) || ((mnemonic != UD_Ixor) && (dst == src1))))
         {
             result_reg = src1;
+            // `or eax, eax` and the like compute nothing
+            emitted = 0;
         }
         else
         {
@@ -1763,6 +1766,11 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
         SR_disassemble_change_flags(pOutput, Tflags_to_write, 0, 0);
 
         SR_disassemble_set_flags_AZSP(pOutput, result_reg, LR_TMP4, 32, 0, mnemonic, Tflags_to_write & ~FL_ADJUST);
+    }
+    else if ((retval == 0) && !emitted)
+    {
+        // only flags, all of them dead: nothing is emitted, and the caller rejects empty output
+        OUTPUT_STRING("; no operation\n");
     }
 
     return retval;
