@@ -1,0 +1,144 @@
+;;
+;;  Copyright (C) 2016-2023 Roman Pauer
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+;;
+
+;;
+;;  The symbols the recompiled code leaves undefined, which the port provides
+;;  (MD-runtime.c and the other MD-*.c).
+;;
+;;  Most DOS/library calls go through the raw int/in/out instructions SR
+;;  translates to the standard bridges llasm.llinc's includes declare; the console-input pair (kbhit/getch) goes through
+;;  external_procedures.sci -> SR_checkch/SR_getch instead (SR-asm-calls.llasm,
+;;  compiled as its own .o -- a `tcall` target has to be declared external here
+;;  or llasm rejects it as unknown even though the symbol resolves fine at
+;;  final link, same pattern Albion/Warcraft/X-Com use for their own SR_*
+;;  library calls). SR_CheckTimer is called by every ACTION_* macro (see
+;;  macros.llinc) but isn't part of any llasm-support include, so every game
+;;  declares it here itself.
+;;
+
+funcv SR_CheckTimer
+
+proc SR_checkch external
+proc SR_getch external
+; WATCOM printf (loc_691AB). Replaced host-side so console output is not
+; held in the guest's own line-buffered stdout: the startup banner ends
+; without a newline, so it would otherwise never be flushed.
+proc SR_printf external
+; WATCOM sprintf (loc_6998A).
+proc SR_sprintf external
+; WATCOM _nmalloc/_nfree (loc_69894/loc_6AE62), also referenced from data:
+; they are the default AIL_mem_use_malloc/free hooks at loc_B899C/loc_B89A0.
+proc SR__nmalloc external
+proc SR__nfree external
+; WATCOM file I/O (MD-proc-vfs.c): the stream functions the game and AIL
+; call, and the handle-level open/read/close/filelength.
+proc SR_fopen external
+proc SR_fclose external
+proc SR_fread external
+proc SR_fwrite external
+proc SR_fseek external
+proc SR_fgetc external
+proc SR_setbuf external
+proc SR_fprintf external
+proc SR_fscanf external
+proc SR_open external
+proc SR_read external
+proc SR_close external
+proc SR_filelength external
+; Miles AIL 3.x (MD-sound.c): the 18 entry points the game calls.
+proc SR_AIL_startup external
+proc SR_AIL_shutdown external
+proc SR_AIL_set_preference external
+proc SR_AIL_register_timer external
+proc SR_AIL_set_timer_period external
+proc SR_AIL_start_timer external
+proc SR_AIL_install_DIG_INI external
+proc SR_AIL_allocate_sample_handle external
+proc SR_AIL_init_sample external
+proc SR_AIL_set_sample_address external
+proc SR_AIL_set_sample_type external
+proc SR_AIL_start_sample external
+proc SR_AIL_stop_sample external
+proc SR_AIL_end_sample external
+proc SR_AIL_set_sample_playback_rate external
+proc SR_AIL_set_sample_volume external
+proc SR_AIL_set_sample_loop_count external
+proc SR_AIL_sample_status external
+
+; The VGA window (Game_vars.h): the translated `mov reg, 0xa0000` load it
+; (instruction_replacements.sci).
+extern Game_ScreenWindow
+; The DOS memory pool's host address minus 0x10000, for the two places the
+; game turns a DPMI 0100h segment into a pointer (instruction_replacements.sci).
+extern md_lowmem_bias
+extern md_cr0
+extern md_ds_limit
+extern md_idt_base
+; WATCOM int386()'s raw `int N / ret` stubs (instruction_replacements.sci,
+; loc_74928): md_int86_thunk (Game-llasm.llasm) stands in for them, and
+; md_int86_no hands it N. One slot is enough: int386() is not reentrant and
+; this port is single-threaded.
+proc md_int86_thunk external
+extern md_int86_no
+extern md_smc_3f5d7
+extern md_smc_3f5e2
+extern md_smc_41532
+extern md_smc_4153b
+extern md_smc_4154f
+; the span fillers at loc_40B40/loc_41060 and loc_41F52 (instruction_replacements.sci)
+extern md_smc_40b42
+extern md_smc_40b4b
+extern md_smc_40b57
+extern md_smc_40b62
+extern md_smc_40b6b
+extern md_smc_40b73
+extern md_smc_40b81
+extern md_smc_40b8a
+extern md_smc_40b92
+extern md_smc_40ba0
+extern md_smc_40ba9
+extern md_smc_40bb1
+extern md_smc_40bbf
+extern md_smc_40bc8
+extern md_smc_40bd0
+extern md_smc_41062
+extern md_smc_4106b
+extern md_smc_41077
+extern md_smc_4107f
+extern md_smc_410a5
+extern md_smc_410ae
+extern md_smc_410b6
+extern md_smc_410c0
+extern md_smc_410d7
+extern md_smc_410e0
+extern md_smc_410e8
+extern md_smc_410f2
+extern md_smc_41109
+extern md_smc_41112
+extern md_smc_4111a
+extern md_smc_41124
+extern md_smc_4113b
+extern md_smc_41144
+extern md_smc_4114c
+extern md_smc_41154
+extern md_smc_41f54

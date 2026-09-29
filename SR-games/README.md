@@ -152,3 +152,16 @@ The generated *.inc* files should be moved to *Warcraft/SR-War/x86/cdgogver* (or
 
 The generated *.asm* (or *.s* or *.llasm*) files should be modified (change the path to *.inc* (or *.llinc* files) according to existing files and then moved to *Warcraft/SR-War/x86* (or *arm* or *llasm* or *x64*) subdirectory in *games* subproject.
 
+## Mass Destruction
+
+#### SR
+
+The original executable is *MASSD.EXE* from the DOS CD version.
+
+* file size: 1056819 bytes
+* md5: cbb14a55bccf777f7e2f8d65c17eb03f
+* sha1: a14aefe8cb9c16557451a914d43bbe63cf9cde49
+* sha256: 920358080df451446484eed8e512f5c21977e05f8525744ace21ab13fa52347d
+
+The generated files should be moved to *Mass Destruction/SR-MD/llasm* subdirectory in *games* subproject.
+

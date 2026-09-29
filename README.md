@@ -8,6 +8,7 @@ Following DOS games are supported:
 * [X-Com: UFO Defense (UFO: Enemy Unknown)](https://en.wikipedia.org/wiki/UFO:_Enemy_Unknown "X-Com: UFO Defense (UFO: Enemy Unknown)")
 * [X-Com: Terror from the Deep](https://en.wikipedia.org/wiki/X-COM:_Terror_from_the_Deep "X-Com: Terror from the Deep")
 * [Warcraft: Orcs & Humans](https://en.wikipedia.org/wiki/Warcraft:_Orcs_%26_Humans "Warcraft: Orcs & Humans")
+* [Mass Destruction](https://en.wikipedia.org/wiki/Mass_Destruction_\(video_game\) "Mass Destruction")
 
 Following Windows games are supported:
 
@@ -55,3 +56,4 @@ Some notes:
 * The project supports creating 32-bit or 64-bit, Windows or Linux or MacOS versions of the games.
 * The generated versions are little-endian, not big-endian.
 * The generated arm version supports softfp and hardfp calling conventions.
+* Mass Destruction is built only as a 64-bit Linux or Windows version (from the llasm version).

@@ -1,0 +1,88 @@
+;;
+;;  Copyright (C) 2016-2026 Roman Pauer
+;;  Copyright (C) 2026 mxvisor
+;;
+;;  Permission is hereby granted, free of charge, to any person obtaining a copy of
+;;  this software and associated documentation files (the "Software"), to deal in
+;;  the Software without restriction, including without limitation the rights to
+;;  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+;;  of the Software, and to permit persons to whom the Software is furnished to do
+;;  so, subject to the following conditions:
+;;
+;;  The above copyright notice and this permission notice shall be included in all
+;;  copies or substantial portions of the Software.
+;;
+;;  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+;;  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+;;  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+;;  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+;;  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+;;  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+;;  SOFTWARE.
+;;
+
+; Albion's RunProcECX (games/Albion/SR-Main/llasm/Game-llasm.llasm), purely
+; generic. A guest "address of proc" value
+; (e.g. the handler the game hands INT 21h AH=25h) is a real, directly
+; callable host address here: the executable links with a fixed
+; --Ttext-segment precisely so translated procs live at stable addresses, and
+; llasm's own calling convention (fastcc on the single %_cpu* argument) makes
+; a bare indirect tail call through a register ABI-correct. MD-runtime.c uses
+; this to actually run the guest's registered timer ISR from
+; call_guest_interrupt_vector, instead of synthesizing an x86 interrupt frame
+; (which crashed -- see MD-runtime.c's comment there).
+
+include llasm.llinc
+
+proc RunProcECX global c_RunProcECX
+
+        tcall ecx
+
+endp ; end procedure RunProcECX
+
+; The default handler for interrupt vectors nothing has registered.
+; WATCOM/DOS4GW startup code (like the game's own INT 08h handler) commonly
+; chains to "the previously installed handler" by overwriting its own return
+; frame with the saved old vector and executing retf/iret into it -- real DOS
+; always has *some* handler there (the BIOS's own default), never a null
+; pointer. MD-runtime.c seeds interrupt_vectors[] with this stub's address
+; instead of leaving DOS_getvect's answer as 0, so that chain lands somewhere
+; safe (it returns at once, as SR translates iretd -- see
+; SR_full_llasm_instr.c's UD_Iiretd case) instead of jumping to address 0.
+; An ISR must leave every guest register exactly as it found it, so the return
+; address goes in a scratch temp, not in eax -- byte-for-byte the same sequence
+; SR emits for the game's own `iretd` sites (loc_107C3, loc_5405E, loc_688EC,
+; loc_688F3).
+proc md_null_isr global c_md_null_isr
+
+        add tmpadr, esp, 8
+        load tmp1, tmpadr, 4
+        PUSH tmp1
+        POPFD
+        POP tmp1
+        add esp, esp, 8
+        tcall tmp1
+
+endp ; end procedure md_null_isr
+
+; Stands in for the three-byte `int N / ret` stub of WATCOM's int386().
+; loc_74928 dispatches a software interrupt by loading the caller's register
+; block and *returning* into one of 256 such stubs in the table at loc_749CE,
+; indexed base + N*3. SR has to leave that table as raw data -- translating
+; `int N` into a call to x86_int would destroy the three-byte stride every
+; index depends on -- so returning into it would jump straight into data.
+; instruction_replacements.sci rewrites loc_74928 to stash N in md_int86_no and
+; push this proc's address instead of &stub[N]. The stack effect is the stub's:
+; x86_int cleans up after itself, so the final pop-and-tail-call lands on
+; int386's continuation exactly as the real `ret` would have.
+extern md_int86_no
+
+proc md_int86_thunk public
+
+        load tmp1, md_int86_no, 4
+        call x86_int $, tmp1
+
+        POP tmp1
+        tcall tmp1
+
+endp ; end procedure md_int86_thunk

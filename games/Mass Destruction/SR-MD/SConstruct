@@ -1,0 +1,118 @@
+#
+#  Copyright (C) 2016-2026 Roman Pauer
+#  Copyright (C) 2026 mxvisor
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy of
+#  this software and associated documentation files (the "Software"), to deal in
+#  the Software without restriction, including without limitation the rights to
+#  use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+#  of the Software, and to permit persons to whom the Software is furnished to do
+#  so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in all
+#  copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+#  SOFTWARE.
+#
+
+#
+#  Mass Destruction, OUT_LLASM.  The shape follows games/Albion/SR-Main's
+#  SConstruct, for the two devices this port builds: pc64-linux (the default
+#  on Linux, objects in place) and pc64-windows (MinGW-w64, cross from Linux or
+#  native; objects in build-pc64-windows/).
+#
+#  Both link the executable at 0x10000000 without relocations: the game keeps
+#  code addresses in 32-bit variables, so the code must sit below 4 GB.
+#
+
+import os
+import shutil
+
+vars = Variables('custom.py')
+vars.Add(BoolVariable('debug', 'Build with debug information', False))
+vars.Add(EnumVariable('device', 'Set target device', '',
+                                 allowed_values=('', 'pc64-linux', 'pc64-windows'),
+                                 ignorecase=2))
+vars.Add('toolprefix', 'Prefix of the MinGW-w64 tools for pc64-windows (cross builds)', 'x86_64-w64-mingw32-')
+env = Environment(variables = vars)
+
+device = env['device']
+if device == '':
+    device = 'pc64-windows' if env['PLATFORM'] == 'win32' else 'pc64-linux'
+    env['device'] = device
+
+Help(vars.GenerateHelpText(env))
+Help("""
+Environment variables:
+  - PATH_INC: paths to find include files
+  - PATH_LIB: paths to find library files
+""")
+
+if device == 'pc64-windows':
+    if env['PLATFORM'] == 'win32':
+        env = Environment(variables = vars, tools = ['mingw'])
+        env['device'] = device
+    else:
+        prefix = env['toolprefix']
+        for tool, name in (('CC', 'gcc'), ('CXX', 'g++'), ('LINK', 'gcc'), ('AR', 'ar'), ('RANLIB', 'ranlib')):
+            env[tool] = prefix + name
+        env['PROGSUFFIX'] = '.exe'
+        # Fedora's cross sysroot; elsewhere give PATH_INC/PATH_LIB
+        sysroot = '/usr/' + prefix.rstrip('-') + '/sys-root/mingw'
+        if os.path.isdir(sysroot):
+            env.Append(CPPPATH = [sysroot + '/include/SDL2'], LIBPATH = [sysroot + '/lib'])
+
+if 'PATH_INC' in os.environ:
+    env.Append(CPPPATH = os.environ['PATH_INC'].split(os.pathsep))
+if 'PATH_LIB' in os.environ:
+    env.Append(LIBPATH = os.environ['PATH_LIB'].split(os.pathsep))
+
+env.Append(CCFLAGS = '-O2 -Wall -Wextra -x c++ -m64')
+if env['debug']:
+    env.Append(CCFLAGS = '-g')
+
+if device == 'pc64-linux':
+    env.Append(CPPPATH    = ['/usr/include/SDL2', '/usr/local/include/SDL2'],
+               LINKFLAGS  = '-m64 -no-pie -Wl,-z,noexecstack,-Ttext-segment,0x10000000',
+               LIBS       = ['SDL2_mixer', 'SDL2', 'pthread', 'dl', 'm'],
+               LLASMFLAGS = '-m64 -inline-idiv',
+               LLVMFLAGS  = '-mtriple=x86_64-unknown-linux-gnu'
+              )
+else:
+    # a GUI program, as the other games: without a console main.c sends
+    # stdout and stderr to mdfiles/mass-destruction.log, and shows its end
+    # when the game stops on an error (the CD check's among them)
+    env.Append(CCFLAGS    = '-Dmain=SDL_main',
+               LINKFLAGS  = '-m64 -mwindows -Wl,--image-base,0x10000000,--disable-dynamicbase,--disable-reloc-section,--disable-high-entropy-va,--nxcompat,--tsaware',
+               LIBS       = ['mingw32', 'SDL2main', 'SDL2_mixer', 'SDL2'],
+               LLASMFLAGS = '-m64 -inline-idiv',
+               LLVMFLAGS  = '-mtriple=x86_64-pc-windows-gnu'
+              )
+
+for utility in ['llasm', 'opt', 'llc']:
+    utility_path = shutil.which(utility)
+    if utility_path is not None:
+        utility_directory = os.path.dirname(utility_path)
+        if utility_directory not in env['ENV']['PATH'].split(os.pathsep):
+            env['ENV']['PATH'] += os.pathsep + utility_directory
+
+if device == 'pc64-linux':
+    build = '.'
+else:
+    build = 'build-' + device
+    VariantDir(build, '.', duplicate = 0)
+
+# the SDL frontends, as the other games have them
+display_objs = SConscript(build + '/display/SConscript', exports='device env')
+audio_objs = SConscript(build + '/audio/SConscript', exports='device env')
+input_objs = SConscript(build + '/input/SConscript', exports='device env')
+
+arch_objs = SConscript(build + '/llasm/SConscript', exports='env')
+
+env.Program(build + '/mass-destruction', Glob(build + '/*.c') + display_objs + audio_objs + input_objs + arch_objs)

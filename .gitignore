@@ -24,6 +24,9 @@ llasm/llasm
 **/SR-Septerra/SR-Septerra
 **/SR-BI3/SR-BI3.exe
 **/SR-BI3/SR-BI3.exe.so
+**/SR-MD/mass-destruction
+**/SR-MD/mdfiles/
+**/SR-MD/build-pc64-windows/
 
 seg*.inc
 seg*.llinc
@@ -54,6 +57,7 @@ WC_FIGTR.asm
 WC_FIGTR.llasm
 SDI_1R.asm
 SDI_1R.llasm
+Mass-Destruction-main.llasm
 
 SR*/udis86*/**/Makefile
 SR*/udis86*/config.h
