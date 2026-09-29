@@ -464,6 +464,26 @@ int SR_apply_fixup_info(void)
     section_entry_list_Insert(EIPObjectNum, EIP);
 
 #else
+    replace_data *replace;
+    output_data *output;
+    bound_data *bound;
+
+    // insert program entry point into list of entries (forced for X86 output),
+    // unless it is inside a replaced area (e.g. library code replaced by nothing);
+    // it also needs a label and a region bound, as any other code address
+    replace = section_replace_list_FindEntryEqualOrLower(EIPObjectNum, EIP);
+    if ((replace == NULL) || (replace->ofs == EIP) || (replace->ofs + replace->length <= EIP))
+    {
+        output = section_output_list_FindEntryEqual(EIPObjectNum, EIP);
+        if (output != NULL)
+        {
+            output->has_label = 1;
+        }
+
+        section_entry_list_Insert(EIPObjectNum, EIP);
+        bound = section_bound_list_Insert(EIPObjectNum, EIP);
+        if (bound != NULL) bound->begin = 1;
+    }
 
     for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
     {
