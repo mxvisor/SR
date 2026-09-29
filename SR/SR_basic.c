@@ -35,7 +35,7 @@ typedef struct _Entry_FILE_ {
 
 int SR_initial_disassembly(void)
 {
-    uint_fast32_t Entry, ofs;
+    uint_fast32_t Entry, ofs, sec, reladr;
     output_data *output;
 
     for (Entry = 0; Entry < num_sections; Entry++)
@@ -70,6 +70,14 @@ int SR_initial_disassembly(void)
             output->type = OT_NONE;
             output->has_label = 1;
             output->len = (uint_fast32_t) -1;
+
+            // the address after the end belongs to another section when one starts there
+            // (e.g. the bss section split off by bssborder.csv): addresses resolve to it,
+            // and its first label would be written twice
+            if (SR_get_section_reladr(section[Entry].start + section[Entry].size, &sec, &reladr) && (sec != Entry))
+            {
+                output->has_label = 0;
+            }
         }
     }
 
