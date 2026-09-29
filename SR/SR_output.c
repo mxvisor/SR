@@ -30,6 +30,7 @@
 typedef struct _Entry_FILE_ {
     uint_fast32_t Entry;
     FILE *fout;
+    int proc_open, proc_tcall;
 } Entry_FILE;
 
 
@@ -228,9 +229,51 @@ static void SR_write_llasm_output_function(output_data *item, void *data)
 #undef DATA
 }
 
+// the first word of the last line of code in str (not blank, not a comment), and its length
+static int SR_llasm_last_word(const char *str, const char **word)
+{
+    const char *begin, *end, *pos;
+    int len;
+
+    end = str + strlen(str);
+    while (end != str)
+    {
+        begin = end;
+        while ((begin != str) && (begin[-1] != '\n'))
+        {
+            begin--;
+        }
+
+        pos = begin;
+        while ((pos != end) && (*pos == ' ' || *pos == '\t'))
+        {
+            pos++;
+        }
+
+        if ((pos != end) && (*pos != ';'))
+        {
+            len = 0;
+            while ((pos + len != end) && (pos[len] != ' ' && pos[len] != '\t' && pos[len] != ';'))
+            {
+                len++;
+            }
+
+            *word = pos;
+            return len;
+        }
+
+        end = (begin != str) ? begin - 1 : str;
+    }
+
+    *word = str;
+    return 0;
+}
+
 static void SR_write_llasm_output_line(output_data *item, void *data)
 {
     char cbuf[16];
+    const char *word;
+    int len;
 
 #define DATA ((Entry_FILE *) data)
 
@@ -242,6 +285,19 @@ static void SR_write_llasm_output_line(output_data *item, void *data)
 
             SR_get_label(cbuf, section[DATA->Entry].start + item->ofs);
 
+            // the translator closes a proc only before the labels it knows about:
+            // a label made by a fixup during translation, or one after a replaced
+            // instruction (the llasm translator skips replacements), leaves it open
+            if (DATA->proc_open)
+            {
+                if (!DATA->proc_tcall)
+                {
+                    fprintf(DATA->fout, "tcall %s\n", cbuf);
+                }
+
+                fprintf(DATA->fout, "endp\n\n");
+            }
+
             alias = section_alias_list_FindEntryEqual(DATA->Entry, item->ofs);
 
             if (alias != NULL)
@@ -252,9 +308,20 @@ static void SR_write_llasm_output_line(output_data *item, void *data)
             {
                 fprintf(DATA->fout, "proc %s\n", cbuf);
             }
+
+            DATA->proc_open = 1;
         }
 
         fprintf(DATA->fout, "%s\n", item->str);
+
+        // the last line of code decides whether the proc is still open
+        len = SR_llasm_last_word(item->str, &word);
+
+        if ((len == 4) && (strncmp(word, "endp", 4) == 0))
+        {
+            DATA->proc_open = 0;
+        }
+        DATA->proc_tcall = (len == 5) && (strncmp(word, "tcall", 5) == 0);
     }
 
 #undef DATA
@@ -614,7 +681,15 @@ int SR_write_output(const char *fname)
 
             if ( EF.fout == NULL ) return -3;
 
+            EF.proc_open = 0;
+            EF.proc_tcall = 0;
+
             section_output_list_ForEach(EF.Entry, &SR_write_llasm_output_line, (void *) &EF);
+
+            if (EF.proc_open)
+            {
+                fprintf(stderr, "Warning: proc open at the end of section - %i\n", (int)EF.Entry);
+            }
 
             fclose(EF.fout);
 
