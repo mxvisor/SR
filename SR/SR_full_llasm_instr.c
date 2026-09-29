@@ -7279,9 +7279,12 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         {
                             OUTPUT_STRING("FIST_INT32\n");
 
+                            // the result is in tmp0, which the address computation can use as scratch
+                            OUTPUT_STRING("mov tmp1, tmp0\n");
+
                             SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
-                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP0);
+                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP1);
                         }
                     }
                 }
@@ -7320,17 +7323,23 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         {
                             OUTPUT_STRING("FISTP_INT32\n");
 
+                            // the result is in tmp0, which the address computation can use as scratch
+                            OUTPUT_STRING("mov tmp1, tmp0\n");
+
                             SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
-                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP0);
+                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP1);
                         }
                         else if (ud_obj.operand[0].size == 16)
                         {
                             OUTPUT_STRING("FISTP_INT16\n");
 
+                            // the result is in tmp0, which the address computation can use as scratch
+                            OUTPUT_STRING("mov tmp1, tmp0\n");
+
                             SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
-                            SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP0);
+                            SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
                         }
                     }
                 }
@@ -7458,9 +7467,12 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                     {
                         OUTPUT_PARAMSTRING("%s_VOID\n", instr);
 
+                        // the result is in tmp0, which the address computation can use as scratch
+                        OUTPUT_STRING("mov tmp1, tmp0\n");
+
                         SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
-                        SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP0);
+                        SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
                     }
                 }
             }
@@ -7507,9 +7519,12 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         {
                             OUTPUT_PARAMSTRING("%s_FLOAT\n", instr);
 
+                            // the result is in tmp0, which the address computation can use as scratch
+                            OUTPUT_STRING("mov tmp1, tmp0\n");
+
                             SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
-                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP0);
+                            SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP1);
                         }
                     }
                 }
