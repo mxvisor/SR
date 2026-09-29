@@ -579,6 +579,77 @@ EXTERNC void CCALL x87_fld_double(CPU, uint32_t num_low, uint32_t num_high)
     pst0->high = num_high;
 }
 
+/* 80-bit extended precision (tword) load/store.
+   The emulated x87 register file is made of 64-bit doubles, so the 80-bit format
+   is converted on the way in and out -- the extra 11 mantissa bits and the wider
+   exponent range are lost, exactly as they are for every other value this
+   emulation keeps in a double. Memory is accessed byte by byte: tword operands
+   have a 10-byte stride and are therefore routinely unaligned. */
+
+EXTERNC void CCALL x87_fld_ldouble(CPU, const uint8_t *state)
+{
+    double_int *pst0;
+    uint64_t mantissa, dbits;
+    uint32_t sign;
+    int32_t exponent;
+
+    mantissa = ((uint64_t)state[0])
+             | (((uint64_t)state[1]) << 8)
+             | (((uint64_t)state[2]) << 16)
+             | (((uint64_t)state[3]) << 24)
+             | (((uint64_t)state[4]) << 32)
+             | (((uint64_t)state[5]) << 40)
+             | (((uint64_t)state[6]) << 48)
+             | (((uint64_t)state[7]) << 56);
+    exponent = ((int32_t)state[8]) | (((int32_t)state[9]) << 8);
+
+    sign = (exponent & 0x8000) ? UINT32_C(0x80000000) : 0;
+    exponent &= 0x7fff;
+
+    if (exponent == 0x7fff)
+    {
+        /* infinity or NaN -- keep the payload, use the double's maximum exponent */
+        dbits = ((uint64_t)(UINT32_C(0x7ff) | (sign >> 20)) << 52)
+              | ((mantissa >> 11) & UINT64_C(0x000fffffffffffff));
+    }
+    else if (mantissa == 0)
+    {
+        dbits = ((uint64_t)sign) << 32;
+    }
+    else
+    {
+        /* a zero exponent with a non-zero mantissa is an 80-bit subnormal; its
+           true exponent is the one that a stored exponent of 1 encodes */
+        if (exponent == 0) exponent = 1;
+
+        exponent += 1023 - 16383;
+
+        if (exponent >= 0x7ff)
+        {
+            /* too large for a double -- infinity */
+            dbits = (uint64_t)(UINT32_C(0x7ff) | (sign >> 20)) << 52;
+        }
+        else if (exponent <= 0)
+        {
+            /* subnormal in double precision, or underflow to zero */
+            int shift = 12 - exponent;
+
+            dbits = ((uint64_t)sign) << 32;
+            if (shift < 64) dbits |= mantissa >> shift;
+        }
+        else
+        {
+            dbits = ((uint64_t)(((uint32_t)exponent) | (sign >> 20)) << 52)
+                  | ((mantissa >> 11) & UINT64_C(0x000fffffffffffff));
+        }
+    }
+
+    PUSH_REGS;
+    pst0 = (double_int *) &(ST0);
+    pst0->low = (uint32_t)dbits;
+    pst0->high = (uint32_t)(dbits >> 32);
+}
+
 EXTERNC void CCALL x87_fld_st(CPU, int num)
 {
     double newval;
@@ -860,6 +931,63 @@ EXTERNC uint32_t CCALL x87_fstp_double(CPU)
     POP_REGS;
     return PTR2REG(presult);
 #endif
+}
+
+EXTERNC void CCALL x87_fstp_ldouble(CPU, uint8_t *state)
+{
+    const double_int *pst0;
+    uint64_t mantissa, dbits;
+    uint32_t exponent, sign;
+
+    pst0 = (const double_int *) &(ST0);
+    dbits = (((uint64_t)pst0->high) << 32) | pst0->low;
+
+    sign = (uint32_t)(dbits >> 48) & 0x8000;
+    exponent = (uint32_t)(dbits >> 52) & 0x7ff;
+    mantissa = dbits & UINT64_C(0x000fffffffffffff);
+
+    if (exponent == 0x7ff)
+    {
+        /* infinity or NaN -- the 80-bit format stores the integer bit explicitly */
+        mantissa = (mantissa << 11) | UINT64_C(0x8000000000000000);
+        exponent = 0x7fff;
+    }
+    else if (exponent == 0)
+    {
+        if (mantissa != 0)
+        {
+            /* subnormal double -- the 80-bit exponent range is wide enough to
+               hold it as a normal number, so normalize it */
+            uint32_t shift;
+
+            for (shift = 0; (mantissa & UINT64_C(0x8000000000000000)) == 0; shift++)
+            {
+                mantissa <<= 1;
+            }
+            exponent = 15372 - shift;
+        }
+        /* else: +-0, stored as a zero exponent and a zero mantissa */
+    }
+    else
+    {
+        mantissa = (mantissa << 11) | UINT64_C(0x8000000000000000);
+        exponent = exponent + 16383 - 1023;
+    }
+
+    exponent |= sign;
+
+    state[0] = (uint8_t)mantissa;
+    state[1] = (uint8_t)(mantissa >> 8);
+    state[2] = (uint8_t)(mantissa >> 16);
+    state[3] = (uint8_t)(mantissa >> 24);
+    state[4] = (uint8_t)(mantissa >> 32);
+    state[5] = (uint8_t)(mantissa >> 40);
+    state[6] = (uint8_t)(mantissa >> 48);
+    state[7] = (uint8_t)(mantissa >> 56);
+    state[8] = (uint8_t)exponent;
+    state[9] = (uint8_t)(exponent >> 8);
+
+    POP_REGS;
 }
 
 EXTERNC void CCALL x87_fstp_st(CPU, int num)

@@ -7399,6 +7399,13 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
 
                             OUTPUT_STRING("FLD_FLOAT tmp1\n");
                         }
+                        // 80-bit: the helper reads the 10 bytes itself
+                        else if (ud_obj.operand[0].size == 80)
+                        {
+                            SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                            OUTPUT_PARAMSTRING("FLD_LDOUBLE %s\n", memadr.madr);
+                        }
                     }
                 }
                 else
@@ -7542,6 +7549,13 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
 
                             SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP1);
+                        }
+                        // 80-bit (fstp only, fst has no such form): the helper writes the 10 bytes itself
+                        else if ((ud_obj.operand[0].size == 80) && (ud_obj.mnemonic == UD_Ifstp))
+                        {
+                            SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                            OUTPUT_PARAMSTRING("FSTP_LDOUBLE %s\n", memadr.madr);
                         }
                     }
                 }

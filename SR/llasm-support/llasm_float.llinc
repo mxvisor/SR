@@ -70,6 +70,7 @@ funcv x87_fisubr_int32 $, num
 
 funcv x87_fld_float $, num
 funcv x87_fld_double $, num_low, num_high
+funcv x87_fld_ldouble $, *state
 funcv x87_fld_st $, num
 funcv x87_fld1_void $
 funcv x87_fldlg2_void $
@@ -108,6 +109,7 @@ func x87_fst_double $
 funcv x87_fst_st $, num
 func x87_fstp_float $
 func x87_fstp_double $
+funcv x87_fstp_ldouble $, *state
 funcv x87_fstp_st $, num
 
 func x87_fnstcw_void $
@@ -318,6 +320,10 @@ macro FLD_DOUBLE num_low, num_high
     call x87_fld_double $, \num_low, \num_high
 endm
 
+macro FLD_LDOUBLE state
+    call x87_fld_ldouble $, \state
+endm
+
 macro FLD_ST num
     call x87_fld_st $, \num
 endm
@@ -438,6 +444,10 @@ endm
 
 macro FSTP_DOUBLE
     call x87_fstp_double $
+endm
+
+macro FSTP_LDOUBLE state
+    call x87_fstp_ldouble $, \state
 endm
 
 macro FSTP_ST num
