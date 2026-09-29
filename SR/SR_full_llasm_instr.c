@@ -5047,6 +5047,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
             }
             break;
         case UD_Ipopfd:
+        case UD_Ipopfw:
             {
                 /* all flags modified */
 
@@ -6938,6 +6939,11 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
 
             }
             break;
+        case UD_If2xm1:
+        case UD_Ifldl2e:
+        case UD_Ifprem:
+        case UD_Ifscale:
+        case UD_Iftst:
         case UD_Ifabs:
         case UD_Ifchs:
         case UD_Ifcompp:
@@ -6947,8 +6953,11 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
         case UD_Ifldln2:
         case UD_Ifldz:
         case UD_Ifninit:
+        case UD_Ifpatan:
         case UD_Ifptan:
+        case UD_Ifrndint:
         case UD_Ifsin:
+        case UD_Ifsincos:
         case UD_Ifsqrt:
         case UD_Ifucompp:
         case UD_Ifyl2x:
@@ -6963,6 +6972,11 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 //}
 
                 if (ud_obj.mnemonic == UD_Ifabs) instr = "FABS";
+                else if (ud_obj.mnemonic == UD_If2xm1) instr = "F2XM1";
+                else if (ud_obj.mnemonic == UD_Ifldl2e) instr = "FLDL2E";
+                else if (ud_obj.mnemonic == UD_Ifprem) instr = "FPREM";
+                else if (ud_obj.mnemonic == UD_Ifscale) instr = "FSCALE";
+                else if (ud_obj.mnemonic == UD_Iftst) instr = "FTST";
                 else if (ud_obj.mnemonic == UD_Ifchs) instr = "FCHS";
                 else if (ud_obj.mnemonic == UD_Ifcompp) instr = "FCOMPP";
                 else if (ud_obj.mnemonic == UD_Ifcos) instr = "FCOS";
@@ -6971,8 +6985,11 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 else if (ud_obj.mnemonic == UD_Ifldln2) instr = "FLDLN2";
                 else if (ud_obj.mnemonic == UD_Ifldz) instr = "FLDZ";
                 else if (ud_obj.mnemonic == UD_Ifninit) instr = "FNINIT";
+                else if (ud_obj.mnemonic == UD_Ifpatan) instr = "FPATAN";
                 else if (ud_obj.mnemonic == UD_Ifptan) instr = "FPTAN";
+                else if (ud_obj.mnemonic == UD_Ifrndint) instr = "FRNDINT";
                 else if (ud_obj.mnemonic == UD_Ifsin) instr = "FSIN";
+                else if (ud_obj.mnemonic == UD_Ifsincos) instr = "FSINCOS";
                 else if (ud_obj.mnemonic == UD_Ifsqrt) instr = "FSQRT";
                 else if (ud_obj.mnemonic == UD_Ifucompp) instr = "FUCOMPP";
                 else /*if (ud_obj.mnemonic == UD_Ifyl2x)*/ instr = "FYL2X";

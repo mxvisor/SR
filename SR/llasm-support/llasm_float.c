@@ -114,6 +114,7 @@ const static double const_0_0 = 0.0;
 const static double const_1_0 = 1.0;
 const static double const_lg2 = 0.30102999566398119521; // log10l(2.0l)
 const static double const_ln2 = M_LN2;
+const static double const_l2e = M_LOG2E;
 
 #define st cpu->_st
 #define st_result cpu->_st_result
@@ -587,6 +588,46 @@ EXTERNC void CCALL x87_fld_st(CPU, int num)
     ST0 = newval;
 }
 
+/* F2XM1: ST(0) = 2^ST(0) - 1 (the instruction is defined for |ST(0)|<=1). */
+EXTERNC void CCALL x87_f2xm1_void(CPU)
+{
+    ST0 = exp2(ST0) - 1.0;
+    CLEAR_X87_FLAGS;
+}
+
+/* FLDL2E: push log2(e). */
+EXTERNC void CCALL x87_fldl2e_void(CPU)
+{
+    PUSH_REGS;
+    ST0 = const_l2e;
+}
+
+/* FPREM: ST(0) = ST(0) - ST(1)*trunc(ST(0)/ST(1)).  The real instruction
+   may stop early and report that in C2; this always completes, so C2 ends up
+   cleared, which is what the "reduction complete" case looks like. */
+EXTERNC void CCALL x87_fprem_void(CPU)
+{
+    ST0 = fmod(ST0, ST1);
+    CLEAR_X87_FLAGS;
+}
+
+/* FSCALE: ST(0) = ST(0) * 2^trunc(ST(1)). */
+EXTERNC void CCALL x87_fscale_void(CPU)
+{
+    double n;
+
+    n = ST1;
+    n = (n < 0.0) ? ceil(n) : floor(n);
+    ST0 = ldexp(ST0, (int) n);
+    CLEAR_X87_FLAGS;
+}
+
+/* FTST: compare ST(0) with 0.0. */
+EXTERNC void CCALL x87_ftst_void(CPU)
+{
+    X87_CMP(ST0, const_0_0)
+}
+
 EXTERNC void CCALL x87_fld1_void(CPU)
 {
     PUSH_REGS;
@@ -655,6 +696,16 @@ EXTERNC void CCALL x87_fptan_void(CPU)
     ST0 = tan(ST0);
     PUSH_REGS;
     ST0 = const_1_0;
+    CLEAR_X87_FLAGS;
+}
+
+/* FSINCOS: ST(0) <- sin(x), then push cos(x), so ST(0)=cos, ST(1)=sin. */
+EXTERNC void CCALL x87_fsincos_void(CPU)
+{
+    double x = ST0;
+    ST0 = sin(x);
+    PUSH_REGS;
+    ST0 = cos(x);
     CLEAR_X87_FLAGS;
 }
 
@@ -915,6 +966,14 @@ EXTERNC void CCALL x87_fxch_st(CPU, int num)
     CLEAR_X87_FLAGS;
 }
 
+/* FPATAN: ST(1) = atan2(ST(1), ST(0)), then pop. */
+EXTERNC void CCALL x87_fpatan_void(CPU)
+{
+    ST1 = atan2(ST1, ST0);
+    POP_REGS;
+    CLEAR_X87_FLAGS;
+}
+
 EXTERNC void CCALL x87_fyl2x_void(CPU)
 {
     ST1 *= log2(ST0);
@@ -1033,6 +1092,39 @@ EXTERNC void CCALL x87_fpowr_void(CPU)
 {
     ST1 = pow(ST1, ST0);
     POP_REGS;
+}
+
+/* FRNDINT: round ST(0) to an integer using the control word's RC field. */
+EXTERNC void CCALL x87_frndint_void(CPU)
+{
+    double orig, dval;
+
+    orig = ST0;
+    switch ((st_cw >> X87_RC_SHIFT) & 3)
+    {
+    case 0: // Round to nearest (even)
+        dval = floor(orig);
+        if (orig - dval > 0.5)
+        {
+            dval += 1.0;
+        }
+        else if (!(orig - dval < 0.5))
+        {
+            if (fmod(dval, 2.0) != 0.0) dval += 1.0;
+        }
+        break;
+    case 1: // Round down (toward -infinity)
+        dval = floor(orig);
+        break;
+    case 2: // Round up (toward +infinity)
+        dval = ceil(orig);
+        break;
+    default: // Round toward zero (truncate)
+        dval = (orig < 0.0) ? ceil(orig) : floor(orig);
+        break;
+    }
+    ST0 = dval;
+    CLEAR_X87_FLAGS;
 }
 
 // double round(double x);

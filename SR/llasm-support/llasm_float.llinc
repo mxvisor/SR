@@ -84,12 +84,22 @@ funcv x87_fmul_st $, num
 funcv x87_fmul_to_st $, num
 funcv x87_fmulp_st $, num
 
+funcv x87_fpatan_void $
+
+funcv x87_f2xm1_void $
+funcv x87_fldl2e_void $
+funcv x87_fprem_void $
+funcv x87_fscale_void $
+funcv x87_ftst_void $
+
 funcv x87_fptan_void $
 
 funcv x87_frstor_void $, *state
 funcv x87_fnsave_void $, *state
 
 funcv x87_fsin_void $
+
+funcv x87_fsincos_void $
 
 funcv x87_fsqrt_void $
 
@@ -134,6 +144,7 @@ funcv x87_fmodr_void $
 funcv x87_fpow_void $
 funcv x87_fpowr_void $
 funcv x87_fround_void $
+funcv x87_frndint_void $
 funcv x87_ftan_void $
 func x87_ftol_int32 $
 func x87_ftol_int64 $
@@ -354,6 +365,32 @@ macro FMULP_ST num
 endm
 
 
+macro FPATAN_VOID
+    call x87_fpatan_void $
+endm
+
+
+macro F2XM1_VOID
+    call x87_f2xm1_void $
+endm
+
+macro FLDL2E_VOID
+    call x87_fldl2e_void $
+endm
+
+macro FPREM_VOID
+    call x87_fprem_void $
+endm
+
+macro FSCALE_VOID
+    call x87_fscale_void $
+endm
+
+macro FTST_VOID
+    call x87_ftst_void $
+endm
+
+
 macro FPTAN_VOID
     call x87_fptan_void $
 endm
@@ -370,6 +407,11 @@ endm
 
 macro FSIN_VOID
     call x87_fsin_void $
+endm
+
+
+macro FSINCOS_VOID
+    call x87_fsincos_void $
 endm
 
 
@@ -518,6 +560,11 @@ endm
 
 macro FROUND_VOID
     call x87_fround_void $
+endm
+
+
+macro FRNDINT_VOID
+    call x87_frndint_void $
 endm
 
 macro FTAN_VOID
