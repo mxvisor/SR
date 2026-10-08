@@ -209,7 +209,7 @@ struct madr_result {
 static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fixup_data *fixup, uint_fast32_t offset, int decoded_length)
 {
     char cAdr[32];
-    char *str1, *str2;
+    const char *str1, *str2;
     int num;
 
     if (fixup->type == FT_SELFREL)

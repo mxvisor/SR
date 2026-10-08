@@ -124,7 +124,7 @@ int SR_disassemble_convert_cjump(char *dst, const char *modifier, uint_fast32_t 
 int SR_disassemble_convert_fixup(const char *ostr, char *dst, fixup_data *fixup, const extrn_data *extrn, int Entry, uint_fast32_t offset, int decoded_length)
 {
     char cbuf[32];
-    char *str1, *str2;
+    const char *str1, *str2;
     int *label_value;
     output_data *output;
     uint_fast32_t sec, ofs;

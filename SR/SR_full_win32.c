@@ -39,7 +39,8 @@ extern const char* ud_reg_tab[];
 
 int SR_disassemble_remove_segment(const char *ostr, char *dst, uint8_t pfx_seg)
 {
-    char *seg, *str1, *str2;
+    char *seg;
+    const char *str1, *str2;
     intptr_t length1;
 
     switch (pfx_seg)
@@ -103,7 +104,7 @@ int SR_disassemble_remove_segment(const char *ostr, char *dst, uint8_t pfx_seg)
 
 int SR_disassemble_remove_segreg2(const char *ostr, char *dst, const struct ud_operand *op)
 {
-    char *str1, *str2;
+    const char *str1, *str2;
     intptr_t length1, length2;
 
     str1 = strchr(ostr, ' ');
@@ -139,7 +140,7 @@ int SR_disassemble_remove_segreg2(const char *ostr, char *dst, const struct ud_o
 
 int SR_disassemble_convert_farcall(const char *ostr, char *dst)
 {
-    char *str1, *str2;
+    const char *str1, *str2;
     intptr_t length1;
 
     str1 = strstr(ostr, " far ");
