@@ -609,6 +609,7 @@ enum ud_mnemonic_code
   UD_Ivmptrst,
   UD_Ivmclear,
   UD_Ivmxon,
+  UD_Ifstp1,
   UD_Inone,
   UD_I3vil
 };

@@ -603,6 +603,7 @@ const char* ud_mnemonics[] =
   "vmptrst",
   "vmclear",
   "vmxon",
+  "fstp1",
   "none",
   "I3vil",
 };

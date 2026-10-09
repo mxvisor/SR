@@ -7606,6 +7606,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
             break;
         case UD_Ifst:
         case UD_Ifstp:
+        case UD_Ifstp1:
             {
                 /* no flags affected */
 
@@ -7617,7 +7618,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 //}
 
                 if (ud_obj.mnemonic == UD_Ifst) instr = "FST";
-                else /*if (ud_obj.mnemonic == UD_Ifstp)*/ instr = "FSTP";
+                else /*if (ud_obj.mnemonic == UD_Ifstp or UD_Ifstp1)*/ instr = "FSTP";
 
                 if (ud_obj.operand[1].type == UD_NONE)
                 {
