@@ -97,6 +97,8 @@ funcv x87_fptan_void $
 
 funcv x87_frstor_void $, *state
 funcv x87_fnsave_void $, *state
+funcv x87_fldenv_void $, *state
+funcv x87_fnstenv_void $, *state
 
 funcv x87_fsin_void $
 
@@ -408,6 +410,15 @@ endm
 
 macro FNSAVE_MEM state
     call x87_fnsave_void $, \state
+endm
+
+
+macro FLDENV_MEM state
+    call x87_fldenv_void $, \state
+endm
+
+macro FNSTENV_MEM state
+    call x87_fnstenv_void $, \state
 endm
 
 

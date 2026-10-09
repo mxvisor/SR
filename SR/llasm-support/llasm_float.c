@@ -850,6 +850,26 @@ EXTERNC void CCALL x87_fnsave_void(CPU, uint8_t *state)
     st_cw = 0x037f;
 }
 
+EXTERNC void CCALL x87_fldenv_void(CPU, const uint8_t *state)
+{
+    uint32_t sw;
+
+    st_cw = *(uint32_t *)(state) & 0xffff;
+    sw = *(uint32_t *)(state + 4);
+    st_top = (sw >> 11) & 7;
+    st_sw_cond = sw & X87_CX;
+}
+
+EXTERNC void CCALL x87_fnstenv_void(CPU, uint8_t *state)
+{
+    *(uint32_t *)(state) = st_cw;
+    *(uint32_t *)(state + 4) = st_sw_cond | (st_top << 11);
+    *(uint32_t *)(state + 8) = 0;
+
+    // fnstenv masks all exceptions after storing the environment
+    st_cw |= 0x3f;
+}
+
 EXTERNC void CCALL x87_fsin_void(CPU)
 {
     ST0 = sin(ST0);

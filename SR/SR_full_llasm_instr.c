@@ -7577,15 +7577,25 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ifldenv:
+        case UD_Ifnstenv:
         case UD_Ifrstor:
         case UD_Ifnsave:
             {
                 /* no flags affected */
 
+                char *instr;
+
                 SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
 
-                OUTPUT_PARAMSTRING("%s_MEM %s\n", (ud_obj.mnemonic == UD_Ifrstor) ? "FRSTOR" : "FNSAVE", memadr.madr);
+                if (ud_obj.mnemonic == UD_Ifldenv) instr = "FLDENV";
+                else if (ud_obj.mnemonic == UD_Ifnstenv) instr = "FNSTENV";
+                else if (ud_obj.mnemonic == UD_Ifrstor) instr = "FRSTOR";
+                else /*if (ud_obj.mnemonic == UD_Ifnsave)*/ instr = "FNSAVE";
+
+                OUTPUT_PARAMSTRING("%s_MEM %s\n", instr, memadr.madr);
             }
+            break;
         case UD_Ifnstcw:
         case UD_Ifnstsw:
             {
