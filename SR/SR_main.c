@@ -23,6 +23,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <time.h>
 #include <string.h>
@@ -214,6 +215,16 @@ static void read_cfg(void)
                 code_writable = 0;
             }
         }
+        else if ( strcasecmp(str, "code_object") == 0 ) /* str equals "code_object" */
+        {
+            /* LE object number (1-based) to treat as code, may be repeated */
+            int object = atoi(param);
+
+            if (object >= 1 && object <= 32)
+            {
+                code_object_mask |= ((uint32_t)1) << (object - 1);
+            }
+        }
     }
 
     fclose(f);
@@ -264,6 +275,7 @@ static void initialize_values(void)
 	esp_dword_aligned = 0;
 	ebp_dword_aligned = 0;
 	code_writable = 0;
+	code_object_mask = 0;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 32);
@@ -305,6 +317,7 @@ int main (int argc, char *argv[])
 	fprintf(stderr, "esp dword aligned: %s\n", (esp_dword_aligned)?"yes":"no");
 	fprintf(stderr, "ebp dword aligned: %s\n", (ebp_dword_aligned)?"yes":"no");
 	fprintf(stderr, "code writable: %s\n", (code_writable)?"yes":"no");
+	fprintf(stderr, "code objects (extra): 0x%x\n", (unsigned int)code_object_mask);
 
 	input_name = NULL;
 	output_name = NULL;

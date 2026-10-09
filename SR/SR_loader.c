@@ -602,7 +602,7 @@ int SR_LoadFile(const char *fname)
 				// stack segment
 				section[Entry].type = ST_STACK;
 			}
-			else if (ObjectTable[Entry].ObjectFlags & 4)
+			else if ((ObjectTable[Entry].ObjectFlags & 4) || (Entry < 32 && (code_object_mask & (((uint32_t)1) << Entry))))
 			{
 				// code segment
 				section[Entry].type = ST_CODE;
