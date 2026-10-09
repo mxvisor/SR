@@ -2390,6 +2390,28 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ibswap:
+            {
+                /* no flags affected */
+
+                if (ud_obj.operand[0].type == UD_OP_REG)
+                {
+                    OUTPUT_PARAMSTRING("and tmp1, %s, 0xff\n", X86REGSTR(ud_obj.operand[0].base));
+                    OUTPUT_PARAMSTRING("and tmp2, %s, 0xff00\n", X86REGSTR(ud_obj.operand[0].base));
+                    OUTPUT_PARAMSTRING("and tmp3, %s, 0xff0000\n", X86REGSTR(ud_obj.operand[0].base));
+                    OUTPUT_PARAMSTRING("and %s, %s, 0xff000000\n", X86REGSTR(ud_obj.operand[0].base), X86REGSTR(ud_obj.operand[0].base));
+
+                    OUTPUT_STRING("shl tmp1, tmp1, 24\n");
+                    OUTPUT_STRING("shl tmp2, tmp2, 8\n");
+                    OUTPUT_STRING("lshr tmp3, tmp3, 8\n");
+                    OUTPUT_PARAMSTRING("lshr %s, %s, 24\n", X86REGSTR(ud_obj.operand[0].base), X86REGSTR(ud_obj.operand[0].base));
+
+                    OUTPUT_STRING("or tmp1, tmp1, tmp2\n");
+                    OUTPUT_STRING("or tmp1, tmp1, tmp3\n");
+                    OUTPUT_PARAMSTRING("or %s, %s, tmp1\n", X86REGSTR(ud_obj.operand[0].base), X86REGSTR(ud_obj.operand[0].base));
+                }
+            }
+            break;
         case UD_Ibt:
             {
                 /* ZF,OF,AF,SF,PF undefined, CF - modified */
