@@ -438,7 +438,16 @@ static void SR_apply_fixup_data_offset(fixup_data *item, void *data)
         else
         {
 #if (OUTPUT_TYPE == OUT_LLASM)
-            sprintf(cbuf3, "daddr%s", cbuf2);
+            // llasm takes no expression here, only a label with an optional constant offset
+            if (((sec == item->tsec) && (ofs == item->tofs)) ||
+                extrn != NULL)
+            {
+                sprintf(cbuf3, "daddr %s", cbuf);
+            }
+            else
+            {
+                sprintf(cbuf3, "daddr %s%+i", cbuf, (int)((section[item->tsec].start + item->tofs) - (section[sec].start + ofs)));
+            }
 #elif (OUTPUT_TYPE == OUT_ARM_LINUX)
             sprintf(cbuf3, ".int%s", cbuf2);
 #else
