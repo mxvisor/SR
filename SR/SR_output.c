@@ -269,17 +269,83 @@ static int SR_llasm_last_word(const char *str, const char **word)
     return 0;
 }
 
+// the first word of the line at str, 0 if it is blank or a comment
+static int SR_llasm_line_word(const char *str, const char **word)
+{
+    int len;
+
+    while (*str == ' ' || *str == '\t')
+    {
+        str++;
+    }
+
+    len = 0;
+    while ((str[len] != 0) && (str[len] != '\n') && (str[len] != ' ') && (str[len] != '\t') && (str[len] != ';'))
+    {
+        len++;
+    }
+
+    *word = str;
+    return len;
+}
+
+// whether a proc is open after the lines of str: they can open and close procs themselves
+// (a replaced instruction's code); *code tells whether str has any code, *starts_proc
+// whether its first line of code opens a proc
+static int SR_llasm_scan_procs(const char *str, int proc_open, int *code, int *starts_proc)
+{
+    const char *word;
+    int len;
+
+    *code = 0;
+    *starts_proc = 0;
+
+    while (*str != 0)
+    {
+        len = SR_llasm_line_word(str, &word);
+        if (len != 0)
+        {
+            if ((len == 4) && (strncmp(word, "proc", 4) == 0))
+            {
+                if (!*code) *starts_proc = 1;
+                proc_open = 1;
+            }
+            else if ((len == 4) && (strncmp(word, "endp", 4) == 0))
+            {
+                proc_open = 0;
+            }
+            *code = 1;
+        }
+
+        while ((*str != 0) && (*str != '\n'))
+        {
+            str++;
+        }
+        if (*str == '\n')
+        {
+            str++;
+        }
+    }
+
+    return proc_open;
+}
+
 static void SR_write_llasm_output_line(output_data *item, void *data)
 {
     char cbuf[16];
     const char *word;
-    int len;
+    int len, code, starts_proc;
 
 #define DATA ((Entry_FILE *) data)
 
     if (item->type == OT_INSTRUCTION)
     {
-        if (item->has_label != 0)
+        SR_llasm_scan_procs(item->str, 0, &code, &starts_proc);
+
+        // a label starts a proc; so does code no translation reached (a
+        // replaced instruction that no jump leads to), unless it is only a
+        // comment or opens a proc itself
+        if ((item->has_label != 0) || (!DATA->proc_open && code && !starts_proc))
         {
             alias_data *alias;
 
@@ -314,13 +380,10 @@ static void SR_write_llasm_output_line(output_data *item, void *data)
 
         fprintf(DATA->fout, "%s\n", item->str);
 
-        // the last line of code decides whether the proc is still open
-        len = SR_llasm_last_word(item->str, &word);
+        // the code's own proc and endp lines decide whether a proc is still open
+        DATA->proc_open = SR_llasm_scan_procs(item->str, DATA->proc_open, &code, &starts_proc);
 
-        if ((len == 4) && (strncmp(word, "endp", 4) == 0))
-        {
-            DATA->proc_open = 0;
-        }
+        len = SR_llasm_last_word(item->str, &word);
         DATA->proc_tcall = (len == 5) && (strncmp(word, "tcall", 5) == 0);
     }
 
