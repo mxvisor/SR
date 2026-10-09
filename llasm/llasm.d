@@ -183,7 +183,7 @@ string[] instructions_base_list = [
     "ins8lh reg, reg, reg",
     "ins8hl reg, reg, reg",
     "ins8hh reg, reg, reg",
-    "tcall reg/procaddr",
+    "tcall reg/procaddr/externaddr",
     "ctcallz reg, procaddr",
     "ctcallnz reg, procaddr",
     "cmovz reg, reg, reg/const, reg/const",
