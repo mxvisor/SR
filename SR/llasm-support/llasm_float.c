@@ -786,7 +786,8 @@ EXTERNC void CCALL x87_frstor_void(CPU, const uint8_t *state)
     int index;
     double_int value;
     int_int mantissa;
-    uint32_t exponent, sign;
+    int32_t exponent;
+    uint32_t sign;
 
     st_cw = *(uint32_t *)(state) & 0xffff;
     sw = *(uint32_t *)(state + 4);
@@ -800,8 +801,8 @@ EXTERNC void CCALL x87_frstor_void(CPU, const uint8_t *state)
         exponent = *(uint16_t *)(state + 36 + index * 10);
 
         mantissa.i = (mantissa.i >> 11) & UINT64_C(0x000fffffffffffff);
-        sign = (exponent & 0x8000) << 16;
-        exponent = (exponent & 0x7fff) + 1023 - 16383; // adjust bias
+        sign = (uint32_t)(exponent & 0x8000) << 16;
+        exponent = (int32_t)(exponent & 0x7fff) + 1023 - 16383; // adjust bias
         if (exponent >= 2048) exponent = 2047;
         else if (exponent < 0) exponent = 0;
 
