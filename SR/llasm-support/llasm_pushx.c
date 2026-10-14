@@ -113,3 +113,17 @@ EXTERNC void CCALL x86_popfd(CPU)
     X86_InterruptFlag = (eflags & IF)?1:0;
 }
 
+EXTERNC void CCALL x86_popfw(CPU)
+{
+    uint32_t flags;
+
+    flags = (eflags & 0xffff0000) | *((uint16_t *)REG2PTR(esp));
+    esp += 2;
+
+    flags |= 0x0002; /* bit 1 is permanently 1 */
+
+    eflags = flags;
+
+    X86_InterruptFlag = (eflags & IF)?1:0;
+}
+

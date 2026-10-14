@@ -26,6 +26,12 @@
 
 #include "llasm_cpu.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+#elif defined(__i386__) || defined(__x86_64__)
+#include <cpuid.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -56,3 +62,25 @@ EXTERNC void CCALL x86_int(CPU, uint32_t intno)
         x86_popfd(cpu);
 }
 
+EXTERNC void CCALL x86_cpuid(CPU)
+{
+        uint32_t leaf = eax;
+        uint32_t subleaf = ecx;
+        uint32_t a = 0, b = 0, c = 0, d = 0;
+
+#if defined(_MSC_VER)
+        int cpuinfo[4];
+        __cpuidex(cpuinfo, (int)leaf, (int)subleaf);
+        a = (uint32_t)cpuinfo[0];
+        b = (uint32_t)cpuinfo[1];
+        c = (uint32_t)cpuinfo[2];
+        d = (uint32_t)cpuinfo[3];
+#elif defined(__i386__) || defined(__x86_64__)
+        __cpuid_count(leaf, subleaf, a, b, c, d);
+#endif
+
+        eax = a;
+        ebx = b;
+        ecx = c;
+        edx = d;
+}

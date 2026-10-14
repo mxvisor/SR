@@ -1693,6 +1693,7 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
     enum ll_regs result_reg;
 
     int retval;
+    int operation_skipped;
 
     if (mnemonic == UD_Ior)
     {
@@ -1708,12 +1709,14 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
     }
 
     result_reg = dst;
+    operation_skipped = 0;
 
     if (src2 != LR_NONE)
     {
         if ((src1 == src2) && ((mnemonic == UD_Itest) || ((mnemonic != UD_Ixor) && (dst == src1))))
         {
             result_reg = src1;
+            operation_skipped = 1;
         }
         else
         {
@@ -1763,6 +1766,14 @@ static int SR_llasm_helper_and_32(enum ud_mnemonic_code mnemonic, enum ll_regs d
         SR_disassemble_change_flags(pOutput, Tflags_to_write, 0, 0);
 
         SR_disassemble_set_flags_AZSP(pOutput, result_reg, LR_TMP4, 32, 0, mnemonic, Tflags_to_write & ~FL_ADJUST);
+    }
+
+    if (operation_skipped && !retval && !(Tflags_to_write & ~FL_ADJUST))
+    {
+        /* the operation leaves the result register unchanged and no flag is
+           wanted, so nothing was written -- leave a comment instead, so the
+           instruction still has llasm text for the caller to pick up */
+        OUTPUT_PARAMSTRING("; %s %s, %s, %s\n", instr, LLREGSTR(dst), LLREGSTR(src1), LLREGSTR(src2));
     }
 
     return retval;

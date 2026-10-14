@@ -115,6 +115,7 @@ const static double const_1_0 = 1.0;
 const static double const_lg2 = 0.30102999566398119521; // log10l(2.0l)
 const static double const_ln2 = M_LN2;
 const static double const_l2e = M_LOG2E;
+const static double const_pi = M_PI;
 
 #define st cpu->_st
 #define st_result cpu->_st_result
@@ -139,13 +140,22 @@ const static double const_l2e = M_LOG2E;
 
 #define CLEAR_X87_FLAGS { st_sw_cond = 0; }
 
+/* Loads, stores, exchanges and arithmetic change only C1 (C0, C2 and C3 are
+   "undefined" in the SDM; the hardware leaves them as they are). Compiled code
+   relies on that: MSVC schedules such instructions between a compare and the
+   fnstsw that reads its result ("fcom; fsub; fnstsw ax"). Only FPREM/FPREM1
+   (quotient bits, C2) and the trigonometric instructions (C2) report more. */
+
 #define X87_CMP(x, y)  { \
     if ( (x) < (y) ) { \
         st_sw_cond = X87_CF; \
     } else if ( (x) == (y) ) { \
         st_sw_cond = X87_ZF; \
-    } else { \
+    } else if ( (x) > (y) ) { \
         st_sw_cond = 0; \
+    } else { \
+        /* unordered (a NaN): C3, C2 and C0 are all set */ \
+        st_sw_cond = X87_C3 | X87_C2 | X87_C0; \
     } \
 }
 
@@ -164,13 +174,13 @@ const static double const_l2e = M_LOG2E;
 EXTERNC void CCALL x87_fabs_void(CPU)
 {
     ST0 = fabs(ST0);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fadd_float(CPU, float_int num)
 {
     ST0 += num.f;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fadd_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -180,19 +190,19 @@ EXTERNC void CCALL x87_fadd_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 += num.d;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fadd_st(CPU, int num)
 {
     ST0 += ST(num);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fadd_to_st(CPU, int num)
 {
     ST(num) += ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_faddp_st(CPU, int num)
@@ -204,7 +214,7 @@ EXTERNC void CCALL x87_faddp_st(CPU, int num)
 EXTERNC void CCALL x87_fchs_void(CPU)
 {
     ST0 = -ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fcom_float(CPU, float_int num)
@@ -240,13 +250,13 @@ EXTERNC void CCALL x87_fcomp_double(CPU, uint32_t num_low, uint32_t num_high)
 EXTERNC void CCALL x87_fcos_void(CPU)
 {
     ST0 = cos(ST0);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1 | X87_C2);
 }
 
 EXTERNC void CCALL x87_fdiv_float(CPU, float_int num)
 {
     ST0 /= num.f;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdiv_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -256,19 +266,19 @@ EXTERNC void CCALL x87_fdiv_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 /= num.d;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdiv_st(CPU, int num)
 {
     ST0 /= ST(num);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdiv_to_st(CPU, int num)
 {
     ST(num) /= ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdivp_st(CPU, int num)
@@ -280,7 +290,7 @@ EXTERNC void CCALL x87_fdivp_st(CPU, int num)
 EXTERNC void CCALL x87_fdivr_float(CPU, float_int num)
 {
     ST0 = num.f / ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdivr_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -290,12 +300,18 @@ EXTERNC void CCALL x87_fdivr_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 = num.d / ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdivr_st(CPU, int num)
 {
     ST0 = ST(num) / ST0;
+}
+
+EXTERNC void CCALL x87_fdivr_to_st(CPU, int num)
+{
+    ST(num) = ST0 / ST(num);
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fdivrp_st(CPU, int num)
@@ -307,25 +323,25 @@ EXTERNC void CCALL x87_fdivrp_st(CPU, int num)
 EXTERNC void CCALL x87_fiadd_int32(CPU, int32_t num)
 {
     ST0 += num;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fidiv_int32(CPU, int32_t num)
 {
     ST0 /= num;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fidivr_int32(CPU, int32_t num)
 {
     ST0 = num / ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fimul_int32(CPU, int32_t num)
 {
     ST0 *= num;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fild_int32(CPU, int32_t num)
@@ -342,6 +358,10 @@ EXTERNC void CCALL x87_fild_int64(CPU, uint32_t num_low, uint32_t num_high)
     num.high = num_high;
     PUSH_REGS;
     ST0 = (double)num.i;
+    /* a double cannot hold every 64-bit integer, and FILD/FISTP of qwords is a copy idiom:
+     * keep the integer too, so FISTP gives it back unchanged while the register is untouched */
+    cpu->_st_i64[st_top] = num.i;
+    cpu->_st_i64_valid |= 1u << st_top;
 }
 
 EXTERNC void CCALL x87_fninit_void(CPU)
@@ -349,6 +369,7 @@ EXTERNC void CCALL x87_fninit_void(CPU)
     st_top = 0;
     st_sw_cond = 0;
     st_cw = 0x037f;
+    cpu->_st_i64_valid = 0;
 }
 
 EXTERNC int32_t CCALL x87_fist_int32(CPU)
@@ -367,7 +388,7 @@ EXTERNC int32_t CCALL x87_fist_int32(CPU)
         }
         else if (!(orig - dval < 0.5))
         {
-            CLEAR_X87_FLAGS;
+            CLEAR_X87_FLAG(X87_C1);
             if ((dval < 2147483648.0) && (dval > -2147483648.0))
             {
                 ival = (int32_t) dval;
@@ -390,7 +411,7 @@ EXTERNC int32_t CCALL x87_fist_int32(CPU)
         dval = trunc(ST0);
         break;
     }
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
     return ((dval < 2147483648.0) && (dval > -2147483648.0))?((int32_t) dval):((int32_t) 0x80000000);
 }
 
@@ -483,6 +504,8 @@ EXTERNC int32_t CCALL x87_fistp_int32(CPU)
 EXTERNC uint32_t CCALL x87_fistp_int64(CPU)
 {
     double orig, dval;
+    int64_t exact;
+    int exact_valid;
 #ifdef BIG_ENDIAN_BYTE_ORDER
     int_int uval;
     le_int *presult;
@@ -492,7 +515,26 @@ EXTERNC uint32_t CCALL x87_fistp_int64(CPU)
 #endif
 
     orig = ST0;
+    exact_valid = ((cpu->_st_i64_valid >> st_top) & 1) && ((double)cpu->_st_i64[st_top] == orig);
+    exact = cpu->_st_i64[st_top];
     POP_REGS;
+
+    if (exact_valid)
+    {
+#ifdef BIG_ENDIAN_BYTE_ORDER
+        uval.i = exact;
+
+        presult = (le_int *)&(st_result);
+
+        presult->low = uval.low;
+        presult->high = uval.high;
+
+        return PTR2REG(presult);
+#else
+        st_result = exact;
+        return PTR2REG(&(st_result));
+#endif
+    }
 
     if ((orig >= 9223372036854775808.0) || (orig <= -9223372036854775808.0))
     {
@@ -554,13 +596,13 @@ EXTERNC uint32_t CCALL x87_fistp_int64(CPU)
 EXTERNC void CCALL x87_fisub_int32(CPU, int32_t num)
 {
     ST0 -= num;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fisubr_int32(CPU, int32_t num)
 {
     ST0 = num - ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fld_float(CPU, float_int num)
@@ -663,7 +705,7 @@ EXTERNC void CCALL x87_fld_st(CPU, int num)
 EXTERNC void CCALL x87_f2xm1_void(CPU)
 {
     ST0 = exp2(ST0) - 1.0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 /* FLDL2E: push log2(e). */
@@ -673,13 +715,57 @@ EXTERNC void CCALL x87_fldl2e_void(CPU)
     ST0 = const_l2e;
 }
 
+/* FLDPI: push pi. */
+EXTERNC void CCALL x87_fldpi_void(CPU)
+{
+    PUSH_REGS;
+    ST0 = const_pi;
+}
+
+/* The condition codes of a completed FPREM/FPREM1: C0, C3 and C1 are the
+   three low bits of the quotient's magnitude (Q2, Q1, Q0), C2 = 0. With a
+   NaN result the hardware clears C2 and C1 and leaves C0 and C3. */
+static inline void x87_set_quotient_flags(CPU, double result, unsigned int quotient)
+{
+    if (isnan(result))
+    {
+        CLEAR_X87_FLAG(X87_C1 | X87_C2);
+    }
+    else
+    {
+        st_sw_cond = ((quotient & 1) ? X87_C1 : 0) | ((quotient & 2) ? X87_C3 : 0) | ((quotient & 4) ? X87_C0 : 0);
+    }
+}
+
 /* FPREM: ST(0) = ST(0) - ST(1)*trunc(ST(0)/ST(1)).  The real instruction
    may stop early and report that in C2; this always completes, so C2 ends up
-   cleared, which is what the "reduction complete" case looks like. */
+   cleared, which is what the "reduction complete" case looks like. remquo
+   gives the low bits of the quotient rounded to nearest; when that rounding
+   went away from zero, the truncated quotient is one less. */
 EXTERNC void CCALL x87_fprem_void(CPU)
 {
-    ST0 = fmod(ST0, ST1);
-    CLEAR_X87_FLAGS;
+    double result, nearest;
+    int quotient;
+
+    result = fmod(ST0, ST1);
+    nearest = remquo(ST0, ST1, &quotient);
+    quotient = (quotient < 0) ? -quotient : quotient;
+    if (nearest != result) quotient--;
+    ST0 = result;
+    x87_set_quotient_flags(cpu, result, (unsigned int)quotient);
+}
+
+/* FPREM1: IEEE remainder, ST(0) = ST(0) rem ST(1), stack unchanged.  Like
+   FPREM above this always completes, so C2 ends up cleared. */
+EXTERNC void CCALL x87_fprem1_void(CPU)
+{
+    double result;
+    int quotient;
+
+    result = remquo(ST0, ST1, &quotient);
+    quotient = (quotient < 0) ? -quotient : quotient;
+    ST0 = result;
+    x87_set_quotient_flags(cpu, result, (unsigned int)quotient);
 }
 
 /* FSCALE: ST(0) = ST(0) * 2^trunc(ST(1)). */
@@ -690,13 +776,33 @@ EXTERNC void CCALL x87_fscale_void(CPU)
     n = ST1;
     n = (n < 0.0) ? ceil(n) : floor(n);
     ST0 = ldexp(ST0, (int) n);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 /* FTST: compare ST(0) with 0.0. */
 EXTERNC void CCALL x87_ftst_void(CPU)
 {
     X87_CMP(ST0, const_0_0)
+}
+
+/* FXAM: C3/C2/C0 = class of ST(0) and C1 = its sign (Intel SDM table 3-42).
+   The register tag is not modelled, so "empty" is never reported. */
+EXTERNC void CCALL x87_fxam_void(CPU)
+{
+    double value;
+    uint32_t cond;
+
+    value = ST0;
+
+    if (isnan(value))          cond = X87_C0;                  /* NaN */
+    else if (isinf(value))     cond = X87_C0 | X87_C2;         /* infinity */
+    else if (value == 0.0)     cond = X87_C3;                  /* zero */
+    else if (!isnormal(value)) cond = X87_C3 | X87_C2;         /* denormal */
+    else                       cond = X87_C2;                  /* normal */
+
+    if (signbit(value)) cond |= X87_C1;
+
+    st_sw_cond = cond;
 }
 
 EXTERNC void CCALL x87_fld1_void(CPU)
@@ -731,7 +837,7 @@ EXTERNC void CCALL x87_fldcw_uint16(CPU, uint32_t new_cw)
 EXTERNC void CCALL x87_fmul_float(CPU, float_int num)
 {
     ST0 *= num.f;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fmul_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -741,19 +847,19 @@ EXTERNC void CCALL x87_fmul_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 *= num.d;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fmul_st(CPU, int num)
 {
     ST0 *= ST(num);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fmul_to_st(CPU, int num)
 {
     ST(num) *= ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fmulp_st(CPU, int num)
@@ -767,7 +873,7 @@ EXTERNC void CCALL x87_fptan_void(CPU)
     ST0 = tan(ST0);
     PUSH_REGS;
     ST0 = const_1_0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1 | X87_C2);
 }
 
 /* FSINCOS: ST(0) <- sin(x), then push cos(x), so ST(0)=cos, ST(1)=sin. */
@@ -777,7 +883,7 @@ EXTERNC void CCALL x87_fsincos_void(CPU)
     ST0 = sin(x);
     PUSH_REGS;
     ST0 = cos(x);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1 | X87_C2);
 }
 
 EXTERNC void CCALL x87_frstor_void(CPU, const uint8_t *state)
@@ -874,7 +980,7 @@ EXTERNC void CCALL x87_fnstenv_void(CPU, uint8_t *state)
 EXTERNC void CCALL x87_fsin_void(CPU)
 {
     ST0 = sin(ST0);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1 | X87_C2);
 }
 
 EXTERNC void CCALL x87_fsqrt_void(CPU)
@@ -886,7 +992,7 @@ EXTERNC int32_t CCALL x87_fst_float(CPU)
 {
     float_int ret;
 
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
     ret.f = (float)ST0;
 
     return ret.i;
@@ -898,7 +1004,7 @@ EXTERNC uint32_t CCALL x87_fst_double(CPU)
     double_int *pst0;
     le_int *presult;
 
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
     pst0 = (double_int *)&(ST0);
     presult = (le_int *)&(st_result);
 
@@ -909,7 +1015,7 @@ EXTERNC uint32_t CCALL x87_fst_double(CPU)
 #else
     void *presult;
 
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
     presult = &(ST0);
 
     return PTR2REG(presult);
@@ -918,7 +1024,7 @@ EXTERNC uint32_t CCALL x87_fst_double(CPU)
 
 EXTERNC void CCALL x87_fst_st(CPU, int num)
 {
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
     ST(num) = ST0;
 }
 
@@ -1030,7 +1136,7 @@ EXTERNC uint32_t CCALL x87_fnstsw_void(CPU)
 EXTERNC void CCALL x87_fsub_float(CPU, float_int num)
 {
     ST0 -= num.f;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsub_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -1040,19 +1146,19 @@ EXTERNC void CCALL x87_fsub_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 -= num.d;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsub_st(CPU, int num)
 {
     ST0 -= ST(num);
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsub_to_st(CPU, int num)
 {
     ST(num) -= ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsubp_st(CPU, int num)
@@ -1064,7 +1170,7 @@ EXTERNC void CCALL x87_fsubp_st(CPU, int num)
 EXTERNC void CCALL x87_fsubr_float(CPU, float_int num)
 {
     ST0 = num.f - ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsubr_double(CPU, uint32_t num_low, uint32_t num_high)
@@ -1074,12 +1180,18 @@ EXTERNC void CCALL x87_fsubr_double(CPU, uint32_t num_low, uint32_t num_high)
     num.low = num_low;
     num.high = num_high;
     ST0 = num.d - ST0;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsubr_st(CPU, int num)
 {
     ST0 = ST(num) - ST0;
+}
+
+EXTERNC void CCALL x87_fsubr_to_st(CPU, int num)
+{
+    ST(num) = ST0 - ST(num);
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fsubrp_st(CPU, int num)
@@ -1108,11 +1220,18 @@ EXTERNC void CCALL x87_fucompp_void(CPU)
 EXTERNC void CCALL x87_fxch_st(CPU, int num)
 {
     double tmpst;
+    int64_t tmpi64;
+    uint32_t bit0 = 1u << st_top, bit1 = 1u << ((st_top + num) & 7);
+    uint32_t valid0 = cpu->_st_i64_valid & bit0, valid1 = cpu->_st_i64_valid & bit1;
 
     tmpst = ST0;
     ST0 = ST(num);
     ST(num) = tmpst;
-    CLEAR_X87_FLAGS;
+    tmpi64 = cpu->_st_i64[st_top];
+    cpu->_st_i64[st_top] = cpu->_st_i64[(st_top + num) & 7];
+    cpu->_st_i64[(st_top + num) & 7] = tmpi64;
+    cpu->_st_i64_valid = (cpu->_st_i64_valid & ~(bit0 | bit1)) | (valid1 ? bit0 : 0) | (valid0 ? bit1 : 0);
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 /* FPATAN: ST(1) = atan2(ST(1), ST(0)), then pop. */
@@ -1120,7 +1239,7 @@ EXTERNC void CCALL x87_fpatan_void(CPU)
 {
     ST1 = atan2(ST1, ST0);
     POP_REGS;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 EXTERNC void CCALL x87_fyl2x_void(CPU)
@@ -1273,7 +1392,7 @@ EXTERNC void CCALL x87_frndint_void(CPU)
         break;
     }
     ST0 = dval;
-    CLEAR_X87_FLAGS;
+    CLEAR_X87_FLAG(X87_C1);
 }
 
 // double round(double x);

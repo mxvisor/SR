@@ -37,6 +37,9 @@ typedef struct {
 #endif
     int64_t _st_result;
     void *stack_bottom, *stack_top;
+    /* exact copy of a 64-bit integer loaded into a register (FILD), see llasm_float.c */
+    int64_t _st_i64[8];
+    uint32_t _st_i64_valid;
 } _cpu;
 
 #define CPU _cpu *cpu

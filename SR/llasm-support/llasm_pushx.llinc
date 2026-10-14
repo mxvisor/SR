@@ -27,6 +27,7 @@ funcv x86_pushaw $
 funcv x86_popad $
 funcv x86_popaw $
 funcv x86_popfd $
+funcv x86_popfw $
 
 macro PUSH val
     sub esp, esp, 4
@@ -62,5 +63,9 @@ endm
 
 macro POPFD
     call x86_popfd $
+endm
+
+macro POPFW
+    call x86_popfw $
 endm
 
