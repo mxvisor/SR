@@ -1447,6 +1447,27 @@ string get_addr_to_int32(string value, string ptrtype = "i8", bool nullable_poin
     }
 }
 
+// LLVM IR reference to a global value: a name that is not a bare identifier
+// (stdcall imports like _grBufferClear@12) is quoted
+string llref(string name) @safe pure
+{
+    bool ok = (name.length != 0);
+
+    foreach (c; name)
+    {
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '$' || c == '.' || c == '_' || (c >= '0' && c <= '9')))
+        {
+            ok = false;
+            break;
+        }
+    }
+    if (ok && name[0] >= '0' && name[0] <= '9') ok = false;
+
+    if (ok) return "@" ~ name;
+
+    return "@\"" ~ name.replace("\\", "\\\\").replace("\"", "\\\"") ~ "\"";
+}
+
 string get_parameter_read_value(param_struct param, bool as_pointer = false, bool nullable_pointer = false)
 {
     switch (param.type)
@@ -1537,22 +1558,22 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false, boo
                 {
                     if (as_pointer)
                     {
-                        return "@" ~ param.value;
+                        return llref(param.value);
                     }
                     else
                     {
-                        return get_addr_to_int32("@" ~ param.value);
+                        return get_addr_to_int32(llref(param.value));
                     }
                 }
                 else
                 {
                     if (as_pointer)
                     {
-                        return "getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ")";
+                        return "getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(param.value) ~ ", i32 " ~ to!string(param.ivalue) ~ ")";
                     }
                     else
                     {
-                        return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ")");
+                        return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(param.value) ~ ", i32 " ~ to!string(param.ivalue) ~ ")");
                     }
                 }
             }
@@ -1562,21 +1583,21 @@ string get_parameter_read_value(param_struct param, bool as_pointer = false, boo
 
                 if (as_pointer)
                 {
-                    return "getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")";
+                    return "getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")";
                 }
                 else
                 {
-                    return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")");
+                    return get_addr_to_int32("getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")");
                 }
             }
         case "procaddr":
             if (as_pointer)
             {
-                return "bitcast (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ param.value ~ " to i8*)";
+                return "bitcast (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* " ~ llref(param.value) ~ " to i8*)";
             }
             else
             {
-                return get_addr_to_int32("@" ~ param.value, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
+                return get_addr_to_int32(llref(param.value), ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
             }
         default:
             if (as_pointer)
@@ -1607,22 +1628,22 @@ string get_parameter_read_addr(param_struct param, string ptrtype)
             {
                 if (ptrtype == "i8")
                 {
-                    return "@" ~ param.value;
+                    return llref(param.value);
                 }
                 else
                 {
-                    return "bitcast (i8* @" ~ param.value ~ " to " ~ ptrtype ~ "*)";
+                    return "bitcast (i8* " ~ llref(param.value) ~ " to " ~ ptrtype ~ "*)";
                 }
             }
             else
             {
                 if (ptrtype == "i8")
                 {
-                    return "getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ")";
+                    return "getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(param.value) ~ ", i32 " ~ to!string(param.ivalue) ~ ")";
                 }
                 else
                 {
-                    return "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ param.value ~ ", i32 " ~ to!string(param.ivalue) ~ ") to " ~ ptrtype ~ "*)";
+                    return "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(param.value) ~ ", i32 " ~ to!string(param.ivalue) ~ ") to " ~ ptrtype ~ "*)";
                 }
             }
         }
@@ -1632,11 +1653,11 @@ string get_parameter_read_addr(param_struct param, string ptrtype)
 
             if (ptrtype == "i8")
             {
-                return "getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")";
+                return "getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ")";
             }
             else
             {
-                return "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ") to " ~ ptrtype ~ "*)";
+                return "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + param.ivalue) ~ ") to " ~ ptrtype ~ "*)";
             }
         }
     }
@@ -2977,7 +2998,7 @@ bool process_proc_body(string proc_name)
                     {
                         if (paramvals[0].type == "procaddr")
                         {
-                            add_output_line("musttail call fastcc void @" ~ paramvals[0].value ~ "(%_cpu* %cpu) nounwind");
+                            add_output_line("musttail call fastcc void " ~ llref(paramvals[0].value) ~ "(%_cpu* %cpu) nounwind");
                         }
                         else
                         {
@@ -3016,7 +3037,7 @@ bool process_proc_body(string proc_name)
                     }
                     else
                     {
-                        add_output_line("musttail call fastcc void @" ~ paramvals[1].value ~ "(%_cpu* %cpu) nounwind");
+                        add_output_line("musttail call fastcc void " ~ llref(paramvals[1].value) ~ "(%_cpu* %cpu) nounwind");
 
                         add_output_line("ret void");
                     }
@@ -3126,7 +3147,7 @@ bool process_proc_body(string proc_name)
                     {
                         string dst = get_new_temporary_register();
 
-                        add_output_line(dst ~ " = call " ~ (func.return_value_is_pointer ? "i8*" : "i32") ~ " @" ~ func.real_name ~ "(" ~ srcstr ~ ") nounwind");
+                        add_output_line(dst ~ " = call " ~ (func.return_value_is_pointer ? "i8*" : "i32") ~ " " ~ llref(func.real_name) ~ "(" ~ srcstr ~ ") nounwind");
 
                         if (func.return_value_is_pointer)
                         {
@@ -3152,7 +3173,7 @@ bool process_proc_body(string proc_name)
                     }
                     else
                     {
-                        add_output_line("call void @" ~ func.real_name ~ "(" ~ srcstr ~ ") nounwind");
+                        add_output_line("call void " ~ llref(func.real_name) ~ "(" ~ srcstr ~ ") nounwind");
                     }
                 }
                 break;
@@ -5053,7 +5074,7 @@ public int main(string[] args)
                 }
                 else if (dataseg.data[i].addr in proc_list)
                 {
-                    dataseg_values ~= "ptrtoint (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ dataseg.data[i].addr ~ " to i32)";
+                    dataseg_values ~= "ptrtoint (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* " ~ llref(dataseg.data[i].addr) ~ " to i32)";
                 }
                 else
                 {
@@ -5061,17 +5082,17 @@ public int main(string[] args)
                     {
                         auto addrlabel = dlabel_list[dataseg.data[i].addr];
 
-                        dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addr_offset) ~ ") to i32)";
+                        dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addr_offset) ~ ") to i32)";
                     }
                     else
                     {
                         if (dataseg.data[i].addr_offset == 0)
                         {
-                            dataseg_values ~= "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                            dataseg_values ~= "ptrtoint (i8* " ~ llref(dataseg.data[i].addr) ~ " to i32)";
                         }
                         else
                         {
-                            dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ dataseg.data[i].addr ~ ", i32 " ~ to!string(dataseg.data[i].addr_offset) ~ ") to i32)";
+                            dataseg_values ~= "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(dataseg.data[i].addr) ~ ", i32 " ~ to!string(dataseg.data[i].addr_offset) ~ ") to i32)";
                         }
                     }
                 }
@@ -5100,13 +5121,13 @@ public int main(string[] args)
         }
 
         add_output_line("%_" ~ dataseg_name ~ " = type <{ " ~ dataseg_type ~ " }>");
-        add_output_line("@" ~ dataseg_name ~ " = private " ~ ((dataseg.isconstant && !dataseg.addr_in_ctor)?"constant":"global") ~ " %_" ~ dataseg_name ~ " <{ " ~ dataseg_values ~ " }>, align 4");
+        add_output_line(llref(dataseg_name) ~ " = private " ~ ((dataseg.isconstant && !dataseg.addr_in_ctor)?"constant":"global") ~ " %_" ~ dataseg_name ~ " <{ " ~ dataseg_values ~ " }>, align 4");
 
         foreach (label; dataseg.labels)
         {
             if (!position_independent_code || label.isglobal)
             {
-                add_output_line("@" ~ label.name ~ " = " ~ (label.isglobal?"protected":"private") ~ " alias " ~ get_load_type("i8") ~ " getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* @" ~ dataseg_name ~ " to i8*), i32 " ~ to!string(label.offset) ~ ")");
+                add_output_line(llref(label.name) ~ " = " ~ (label.isglobal?"protected":"private") ~ " alias " ~ get_load_type("i8") ~ " getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* " ~ llref(dataseg_name) ~ " to i8*), i32 " ~ to!string(label.offset) ~ ")");
             }
         }
     }
@@ -5116,7 +5137,7 @@ public int main(string[] args)
     add_output_line("; external variables");
     foreach (extern_name; extern_list.keys.sort())
     {
-        add_output_line("@" ~ extern_name ~ " = external global i8");
+        add_output_line(llref(extern_name) ~ " = external global i8");
     }
 
     add_output_line("");
@@ -5149,7 +5170,7 @@ public int main(string[] args)
             func_args ~= datatype;
         }
 
-        add_output_line("declare ccc " ~ (func.has_return_value?(func.return_value_is_pointer?"i8*":"i32"):"void") ~ " @" ~ func.real_name ~ "(" ~ func_args ~ ") nounwind");
+        add_output_line("declare ccc " ~ (func.has_return_value?(func.return_value_is_pointer?"i8*":"i32"):"void") ~ " " ~ llref(func.real_name) ~ "(" ~ func_args ~ ") nounwind");
     }
 
 
@@ -5161,7 +5182,7 @@ public int main(string[] args)
 
         if (!proc.isexternal) continue;
 
-        add_output_line("declare hidden fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu*) nounwind");
+        add_output_line("declare hidden fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " " ~ llref(proc_name) ~ "(%_cpu*) nounwind");
         if (proc.alias_name != "")
         {
             //add_output_line("@" ~ proc.alias_name ~ " = external alias void(%_cpu*)* @" ~ proc_name);
@@ -5225,7 +5246,7 @@ public int main(string[] args)
     {
         auto proc = proc_list[proc_name];
 
-        add_output_line("define " ~ ((proc.isglobal)?"protected":((proc.ispublic)?"hidden":"private")) ~ " fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " @" ~ proc_name ~ "(%_cpu* %cpu) nounwind {");
+        add_output_line("define " ~ ((proc.isglobal)?"protected":((proc.ispublic)?"hidden":"private")) ~ " fastcc " ~ ((no_tail_calls)?"i8*":"void") ~ " " ~ llref(proc_name) ~ "(%_cpu* %cpu) nounwind {");
 
         if (!process_proc_body(proc_name))
         {
@@ -5246,12 +5267,12 @@ public int main(string[] args)
                 return_procedure = "__return_procedure";
                 if (no_tail_calls)
                 {
-                    add_output_line("define private fastcc i8* @" ~ return_procedure ~ "(%_cpu* %cpu) nounwind {");
+                    add_output_line("define private fastcc i8* " ~ llref(return_procedure) ~ "(%_cpu* %cpu) nounwind {");
                     add_output_line("ret i8* null");
                 }
                 else
                 {
-                    add_output_line("define private fastcc void @" ~ return_procedure ~ "(%_cpu* %cpu) nounwind {");
+                    add_output_line("define private fastcc void " ~ llref(return_procedure) ~ "(%_cpu* %cpu) nounwind {");
                     add_output_line("ret void");
                 }
                 add_output_line("}");
@@ -5260,7 +5281,7 @@ public int main(string[] args)
             if (no_tail_calls && dispatcher_procedure == "")
             {
                 dispatcher_procedure = "__dispatcher_procedure";
-                add_output_line("define private fastcc void @" ~ dispatcher_procedure ~ "(%_cpu* %cpu, i8*(%_cpu*)* %proc) nounwind {");
+                add_output_line("define private fastcc void " ~ llref(dispatcher_procedure) ~ "(%_cpu* %cpu, i8*(%_cpu*)* %proc) nounwind {");
 
                 string aligntproc = ", align " ~ ((pointer_size_64)?"8":"4");
                 add_output_line("%tproc = alloca i8*(%_cpu*)*" ~ aligntproc);
@@ -5278,7 +5299,7 @@ public int main(string[] args)
                 }
 
                 string r4 = get_int32_to_ptr("%3", "i32");
-                string r5 = get_addr_to_int32("@" ~ return_procedure, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
+                string r5 = get_addr_to_int32(llref(return_procedure), ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
                 add_output_line("store i32 " ~ r5 ~ ", i32* " ~ r4 ~ ", align 4");
 
                 add_output_line("store i8*(%_cpu*)* %proc, i8*(%_cpu*)** %tproc" ~ aligntproc);
@@ -5301,11 +5322,11 @@ public int main(string[] args)
                 add_output_line("}");
             }
 
-            add_output_line("define protected ccc void @" ~ proc.global_name ~ "(%_cpu* %cpu) nounwind {");
+            add_output_line("define protected ccc void " ~ llref(proc.global_name) ~ "(%_cpu* %cpu) nounwind {");
 
             if (no_tail_calls)
             {
-                add_output_line("tail call fastcc void @" ~ dispatcher_procedure ~ "(%_cpu* %cpu, i8*(%_cpu*)* @" ~ proc_name ~ ") nounwind");
+                add_output_line("tail call fastcc void " ~ llref(dispatcher_procedure) ~ "(%_cpu* %cpu, i8*(%_cpu*)* " ~ llref(proc_name) ~ ") nounwind");
             }
             else
             {
@@ -5322,10 +5343,10 @@ public int main(string[] args)
                 }
 
                 string r4 = get_int32_to_ptr("%3", "i32");
-                string r5 = get_addr_to_int32("@" ~ return_procedure, ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
+                string r5 = get_addr_to_int32(llref(return_procedure), ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)");
                 add_output_line("store i32 " ~ r5 ~ ", i32* " ~ r4 ~ ", align 4");
 
-                add_output_line("call fastcc void @" ~ proc_name ~ "(%_cpu* %cpu) nounwind");
+                add_output_line("call fastcc void " ~ llref(proc_name) ~ "(%_cpu* %cpu) nounwind");
             }
 
             add_output_line("ret void");
@@ -5384,7 +5405,7 @@ public int main(string[] args)
                 string store_value;
                 if (dataseg.data[i].addr in proc_list)
                 {
-                    store_value = "ptrtoint (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* @" ~ dataseg.data[i].addr ~ " to i32)";
+                    store_value = "ptrtoint (" ~ ((no_tail_calls)?"i8*":"void") ~ "(%_cpu*)* " ~ llref(dataseg.data[i].addr) ~ " to i32)";
                 }
                 else
                 {
@@ -5392,22 +5413,22 @@ public int main(string[] args)
                     {
                         auto addrlabel = dlabel_list[dataseg.data[i].addr];
 
-                        store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* @" ~ addrlabel.dataseg_name ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addr_offset) ~ ") to i32)";
+                        store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ addrlabel.dataseg_name ~ "* " ~ llref(addrlabel.dataseg_name) ~ " to i8*), i32 " ~ to!string(addrlabel.offset + dataseg.data[i].addr_offset) ~ ") to i32)";
                     }
                     else
                     {
                         if (dataseg.data[i].addr_offset == 0)
                         {
-                            store_value = "ptrtoint (i8* @" ~ dataseg.data[i].addr ~ " to i32)";
+                            store_value = "ptrtoint (i8* " ~ llref(dataseg.data[i].addr) ~ " to i32)";
                         }
                         else
                         {
-                            store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " @" ~ dataseg.data[i].addr ~ ", i32 " ~ to!string(dataseg.data[i].addr_offset) ~ ") to i32)";
+                            store_value = "ptrtoint (i8* getelementptr (" ~ get_load_type("i8") ~ " " ~ llref(dataseg.data[i].addr) ~ ", i32 " ~ to!string(dataseg.data[i].addr_offset) ~ ") to i32)";
                         }
                     }
                 }
 
-                string ptr_value = "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* @" ~ dataseg_name ~ " to i8*), i32 " ~ to!string(dataseg_offset) ~ ") to i32*)";
+                string ptr_value = "bitcast (i8* getelementptr (" ~ get_load_type("i8") ~ " bitcast (%_" ~ dataseg_name ~ "* " ~ llref(dataseg_name) ~ " to i8*), i32 " ~ to!string(dataseg_offset) ~ ") to i32*)";
 
                 int align_value = (dataseg_offset % 4 == 0)?4:( (dataseg_offset % 2 == 0)?2:1 );
 
