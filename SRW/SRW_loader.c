@@ -1109,6 +1109,15 @@ int SRW_LoadFile(const char *fname)
             {
                 if (*LookupTable & 0x80000000)
                 {
+                    // An import by ordinal: the DLL's export table decides the
+                    // name, so the mapping below is that DLL's ABI, not the
+                    // program's -- the same for every user of the DLL. The
+                    // entries were checked against the export tables
+                    // themselves: dplayx.dll and dsound.dll as shipped in a
+                    // DirectX redistributable, wsock32.dll against two copies
+                    // that agree with the entries already here. An ordinal
+                    // outside the tables stays an error: a name made up for it
+                    // would be a symbol the port cannot implement.
                     ProcName = NULL;
 
                     if (((*LookupTable & 0xffff) == 17) && (strcasecmp(DllName, "comctl32.dll") == 0))
@@ -1138,6 +1147,7 @@ int SRW_LoadFile(const char *fname)
                             case   8: ProcName = "ws2_32.htonl"; break;
                             case   9: ProcName = "ws2_32.htons"; break;
                             case  10: ProcName = "ws2_32.inet_addr"; break;
+                            case  11: ProcName = "ws2_32.inet_ntoa"; break;
                             case  12: ProcName = "ws2_32.ioctlsocket"; break;
                             case  13: ProcName = "ws2_32.listen"; break;
                             case  14: ProcName = "ws2_32.ntohl"; break;
@@ -1154,6 +1164,17 @@ int SRW_LoadFile(const char *fname)
                             case  57: ProcName = "ws2_32.gethostname"; break;
                             case 111: ProcName = "ws2_32.WSAGetLastError"; break;
                             case 115: ProcName = "ws2_32.WSAStartup"; break;
+                            case 116: ProcName = "ws2_32.WSACleanup"; break;
+                        }
+                    }
+
+                    if (strcasecmp(DllName, "DPLAYX.dll") == 0)
+                    {
+                        switch(*LookupTable & 0xffff)
+                        {
+                            case 1: ProcName = "DirectPlayCreate"; break;
+                            case 2: ProcName = "DirectPlayEnumerateA"; break;
+                            case 4: ProcName = "DirectPlayLobbyCreateA"; break;
                         }
                     }
 
