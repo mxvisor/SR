@@ -447,7 +447,18 @@ static void SR_apply_fixup_data_offset(fixup_data *item, void *data)
         else if (item->type == FT_SEGMENT || item->type == FT_16BITOFS)
         {
 #if (OUTPUT_TYPE == OUT_LLASM)
-            sprintf(cbuf3, "dseg%s", cbuf2);
+            // dseg/daddr take a single space-free expression (llasm splits
+            // param1 on the first space), so emit label+N rather than
+            // the parenthesized form used for call operands.
+            if (((sec == item->tsec) && (ofs == item->tofs)) ||
+                extrn != NULL)
+            {
+                sprintf(cbuf3, "dseg %s", cbuf);
+            }
+            else
+            {
+                sprintf(cbuf3, "dseg %s%+i", cbuf, (int)((section[item->tsec].start + item->tofs) - (section[sec].start + ofs)));
+            }
 #else
             sprintf(cbuf3, "dw%s", cbuf2);
 #endif
@@ -458,7 +469,15 @@ static void SR_apply_fixup_data_offset(fixup_data *item, void *data)
         else
         {
 #if (OUTPUT_TYPE == OUT_LLASM)
-            sprintf(cbuf3, "daddr%s", cbuf2);
+            if (((sec == item->tsec) && (ofs == item->tofs)) ||
+                extrn != NULL)
+            {
+                sprintf(cbuf3, "daddr %s", cbuf);
+            }
+            else
+            {
+                sprintf(cbuf3, "daddr %s%+i", cbuf, (int)((section[item->tsec].start + item->tofs) - (section[sec].start + ofs)));
+            }
 #else
             sprintf(cbuf3, "dd%s", cbuf2);
 #endif

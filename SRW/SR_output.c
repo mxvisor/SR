@@ -83,7 +83,11 @@ static void SR_write_output_line(output_data *item, void *data)
 #endif
         }
 
-        if ( (item->ofs == 0) || (item->has_label != 0) )
+        // a label that lies exactly at the end of a section belongs to the
+        // section that follows it (e.g. a bss label at the split of .data),
+        // so it must not be emitted here as well
+        if ( (item->ofs == 0) ||
+             ((item->has_label != 0) && (item->ofs < section[DATA->Entry].size)) )
         {
 #if (OUTPUT_TYPE != OUT_ORIG && OUTPUT_TYPE != OUT_WINDOWS)
             alias_data *alias;
@@ -254,6 +258,26 @@ static void SR_write_output_export_def(export_data *item, void *data)
 #endif
 
 #if (OUTPUT_TYPE != OUT_ORIG && OUTPUT_TYPE != OUT_WINDOWS)
+static void SR_write_mark_data_imports(fixup_data *item, void *data)
+{
+    extrn_data *extrn;
+    output_data *output;
+
+    if (item->type == FT_SEGMENT || item->type == FT_IMAGEBASE || item->type == FT_16BITOFS) return;
+
+    extrn = section_extrn_list_FindEntryEqual(item->tsec, item->tofs);
+    if (extrn == NULL) return;
+
+    // an address of an import kept as data (a pointer in a table) is output
+    // as the import's name, which then has to be declared; an instruction
+    // marks the imports it uses when it is disassembled
+    output = section_output_list_FindEntryEqual((uintptr_t) data, item->sofs);
+    if ((output != NULL) && (output->type == OT_OFFSET) && (output->str != NULL))
+    {
+        extrn->is_used = 1;
+    }
+}
+
 void SR_write_import_is_used(extrn_data *extrn, void *data)
 {
 #define DATA ((Entry_Proc *) data)
@@ -570,6 +594,12 @@ int SR_write_output(const char *fname)
 #endif
 
     fprintf(EF.fout, "\n");
+#if (OUTPUT_TYPE != OUT_ORIG && OUTPUT_TYPE != OUT_WINDOWS)
+    for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
+    {
+        section_fixup_list_ForEach(EF.Entry, &SR_write_mark_data_imports, (void *)(uintptr_t) EF.Entry);
+    }
+#endif
     import_list_ForEach(&SR_write_output_import, (void *) &EF);
 
 #if (OUTPUT_TYPE == OUT_X86 || OUTPUT_TYPE == OUT_X64)
@@ -647,17 +677,23 @@ int SR_write_output(const char *fname)
 
                     if (!has_data) continue;
                 }
-                fprintf(EF.fout, "\ndatasegment %s constant\n", section[EF.Entry].name);
+                fprintf(EF.fout, "\ndatasegment %s constant\n",
+                        (section[EF.Entry].name[0] != '\0') ? section[EF.Entry].name : "unnamed_code");
                 break;
             case ST_DATA:
             case ST_STACK:
-                fprintf(EF.fout, "\ndatasegment %s\n", section[EF.Entry].name);
+                // some PEs have an unnamed section (e.g. stack); llasm needs a name
+                fprintf(EF.fout, "\ndatasegment %s\n",
+                        (section[EF.Entry].name[0] != '\0') ? section[EF.Entry].name :
+                        ((section[EF.Entry].type == ST_STACK) ? "STACK" : "unnamed_data"));
                 break;
             case ST_UDATA:
-                fprintf(EF.fout, "\ndatasegment %s uninitialized\n", section[EF.Entry].name);
+                fprintf(EF.fout, "\ndatasegment %s uninitialized\n",
+                        (section[EF.Entry].name[0] != '\0') ? section[EF.Entry].name : "unnamed_bss");
                 break;
             case ST_RDATA:
-                fprintf(EF.fout, "\ndatasegment %s constant\n", section[EF.Entry].name);
+                fprintf(EF.fout, "\ndatasegment %s constant\n",
+                        (section[EF.Entry].name[0] != '\0') ? section[EF.Entry].name : "unnamed_rdata");
                 break;
 #else
             case ST_CODE:

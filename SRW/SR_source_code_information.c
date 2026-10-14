@@ -63,6 +63,43 @@ static int SR_LoadSCI_fixup_interpret_as_code(FILE *file)
     return 0;
 }
 
+/* code_sections.sci: names of initialised data sections that hold machine code */
+static int SR_LoadSCI_code_sections(FILE *file)
+{
+    char buf[8192];
+    size_t length;
+    int items;
+    unsigned int index;
+
+    while (!feof(file))
+    {
+        // read enters
+        items = fscanf(file, "%8191[\n]", buf);
+        // read line
+        buf[0] = 0;
+        items = fscanf(file, "%8191[^\n]", buf);
+        if (items <= 0) continue;
+        length = strlen(buf);
+        while (length != 0 && (buf[length - 1] == '\r' || buf[length - 1] == ' '))
+        {
+            length--;
+            buf[length] = 0;
+        }
+
+        if (length == 0) continue;
+
+        for (index = 0; index < num_sections; index++)
+        {
+            if (strcmp(section[index].name, buf) == 0)
+            {
+                section[index].type = ST_CODE;
+            }
+        }
+    }
+
+    return 0;
+}
+
 static int SR_LoadSCI_displaced_labels(FILE *file)
 {
     char buf[8192];
@@ -582,6 +619,7 @@ static int SR_LoadSCI_instruction_flags(FILE *file)
 int SR_LoadSCI(void)
 {
     const static char fixup_interpret_as_code[] = "fixup_interpret_as_code.sci";
+    const static char code_sections[] = "code_sections.sci";
     const static char displaced_labels[] = "displaced_labels.sci";
     const static char noret_procedures[] = "noret_procedures.sci";
     const static char code16_areas[] = "code16_areas.sci";
@@ -600,6 +638,19 @@ int SR_LoadSCI(void)
 #endif
     FILE *f;
     int ret;
+
+
+    f = fopen(code_sections, "rt");
+    if (f != NULL)
+    {
+        fprintf(stderr, "\tLoading %s...\n", code_sections);
+
+        ret = SR_LoadSCI_code_sections(f);
+
+        fclose(f);
+
+        if (ret) return ret;
+    }
 
 
     f = fopen(fixup_interpret_as_code, "rt");
