@@ -5438,10 +5438,15 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
             }
             break;
         case UD_Ipushfd:
-        case UD_Ipushfw:
             {
                 /* no flags affected */
                 OUTPUT_STRING("PUSHFD\n");
+            }
+            break;
+        case UD_Ipushfw:
+            {
+                /* no flags affected */
+                OUTPUT_STRING("PUSHFW\n");
             }
             break;
         case UD_Ircl:

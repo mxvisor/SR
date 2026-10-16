@@ -47,6 +47,11 @@ macro PUSHFD
     store eflags, esp, 4
 endm
 
+macro PUSHFW
+    sub esp, esp, 2
+    store16 eflags, esp, 2
+endm
+
 
 macro POP reg
     load \reg, esp, 4
