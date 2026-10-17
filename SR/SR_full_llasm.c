@@ -42,9 +42,8 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
 
     cur_ofs = region->end_ofs;
     finished = 0;
-    flags_to_write = 0;
     last_instruction = 2;
-    //flags_to_write = region->flags_to_write;
+    flags_to_write = region->flags_to_write;
 
     orig_ebp_dword_aligned = ebp_dword_aligned;
     orig_esp_dword_aligned = esp_dword_aligned;
@@ -109,18 +108,21 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
         if (output->str[0] == ';' && strchr(output->str, '\n') == NULL)
         {
             // instruction is commented out
-            newstr = (char *) malloc(strlen(output->str) + 2);
-            if (newstr == NULL)
+            if (!SR_llasm_dry_run)
             {
-                fprintf(stderr, "Error: not enough memory - %i - %i (0x%x)\n", Entry, (unsigned int)cur_ofs, (unsigned int)(section[Entry].start + cur_ofs));
+                newstr = (char *) malloc(strlen(output->str) + 2);
+                if (newstr == NULL)
+                {
+                    fprintf(stderr, "Error: not enough memory - %i - %i (0x%x)\n", Entry, (unsigned int)cur_ofs, (unsigned int)(section[Entry].start + cur_ofs));
 
-                return 3;
+                    return 3;
+                }
+
+                newstr[0] = ';';
+                strcpy(&(newstr[1]), output->str);
+                free(output->str);
+                output->str = newstr;
             }
-
-            newstr[0] = ';';
-            strcpy(&(newstr[1]), output->str);
-            free(output->str);
-            output->str = newstr;
         }
         else
         {
@@ -266,6 +268,19 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
             cur_ofs--;
             output = section_output_list_FindEntryEqualOrLower(Entry, cur_ofs);
         }
+    }
+
+    if (SR_llasm_dry_run)
+    {
+        // the flags are asked from the regions in front of this one
+        SR_llasm_region_leftover = flags_to_write;
+        return 0;
+    }
+
+    if (flags_to_write & region->flags_accept)
+    {
+        // the flags are written by the regions in front of this one
+        flags_to_write &= ~region->flags_accept;
     }
 
     if (flags_to_write)

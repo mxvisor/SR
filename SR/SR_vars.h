@@ -58,6 +58,8 @@ EXTERNAL_VARIABLE int list_data_to_code_fixups;
 EXTERNAL_VARIABLE char *data_to_code_fixups_name;
 
 EXTERNAL_VARIABLE int esp_dword_aligned;
+EXTERNAL_VARIABLE int SR_llasm_dry_run;                 // llasm regions are only analysed: the output is left unchanged
+EXTERNAL_VARIABLE uint_fast32_t SR_llasm_region_leftover;   // flags a dry-run region needs from before its start
 EXTERNAL_VARIABLE int ebp_dword_aligned;
 EXTERNAL_VARIABLE int code_writable;                    // the program writes into its code sections
 EXTERNAL_VARIABLE uint32_t code_object_mask;            // objects (bit = object number - 1) that hold code although the LE header does not mark them executable

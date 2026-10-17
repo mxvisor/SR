@@ -7789,6 +7789,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
             return 7;
     }
 
+    if (!SR_llasm_dry_run)
     {
         char *newstr, *pos;
 

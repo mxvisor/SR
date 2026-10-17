@@ -780,6 +780,8 @@ region_data *section_region_list_Insert(unsigned int SecNum, Word_t Index, uint_
 
     region->begin_ofs = static_cast<uint_fast32_t>(Index);
     region->end_ofs = end_ofs;
+    region->flags_to_write = 0;
+    region->flags_accept = 0;
 
     region_value = reinterpret_cast<region_data **>(OMap_Ins(&section[SecNum].region_list, Index));
     if (region_value == nullptr)

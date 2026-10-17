@@ -23,6 +23,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <malloc.h>
 #include <string.h>
 #include "SR_defs.h"
@@ -339,6 +340,243 @@ static void SR_disassemble_create_regions(bound_data *item, void *data)
 
 /* ************************************************************************** */
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+/* ************************************************************************** */
+
+// Flags that a region reads before it writes them are written by the regions
+// that lead to it (a jump to a conditional jump, a loop condition after a
+// 'test'): the flags are asked from the predecessors of the region, until
+// every region knows what it must leave behind.
+
+typedef struct {
+    uint_fast32_t target;       // index of the region that is entered
+    uint_fast32_t source;       // index of the region that is left
+} Flow_edge;
+
+static int SR_flow_edge_compare(const void *a, const void *b)
+{
+    const Flow_edge *ea = (const Flow_edge *) a;
+    const Flow_edge *eb = (const Flow_edge *) b;
+
+    if (ea->target != eb->target) return (ea->target < eb->target) ? -1 : 1;
+    if (ea->source != eb->source) return (ea->source < eb->source) ? -1 : 1;
+    return 0;
+}
+
+static int SR_region_find(region_data **regions, uint_fast32_t count, uint_fast32_t begin_ofs, uint_fast32_t *index)
+{
+    uint_fast32_t low = 0, high = count;
+
+    while (low < high)
+    {
+        uint_fast32_t mid = (low + high) / 2;
+
+        if (regions[mid]->begin_ofs == begin_ofs)
+        {
+            *index = mid;
+            return 1;
+        }
+        if (regions[mid]->begin_ofs < begin_ofs) low = mid + 1; else high = mid;
+    }
+
+    return 0;
+}
+
+static int SR_flow_edges_add(Flow_edge **edges, uint_fast32_t *count, uint_fast32_t *capacity, uint_fast32_t target, uint_fast32_t source)
+{
+    if (*count == *capacity)
+    {
+        Flow_edge *newedges;
+
+        *capacity = (*capacity) ? (*capacity) * 2 : 1024;
+        newedges = (Flow_edge *) realloc(*edges, (*capacity) * sizeof(Flow_edge));
+        if (newedges == NULL) return 0;
+        *edges = newedges;
+    }
+
+    (*edges)[*count].target = target;
+    (*edges)[*count].source = source;
+    (*count)++;
+
+    return 1;
+}
+
+static int SR_llasm_propagate_flags(unsigned int Entry)
+{
+    region_data *region, **regions;
+    output_data *output;
+    Flow_edge *edges;
+    uint_fast32_t count, capacity, edge_count, edge_capacity, i, k, index, target_ofs;
+    uint_fast32_t *queue, queue_head, queue_tail;
+    unsigned char *queued;
+    int ret, falls;
+
+    ret = 0;
+    regions = NULL;
+    edges = NULL;
+    queue = NULL;
+    queued = NULL;
+    count = 0;
+    capacity = 0;
+    edge_count = 0;
+    edge_capacity = 0;
+
+    for (region = section_region_list_FindEntryFirst(Entry); region != NULL; region = section_region_list_FindEntryHigher(Entry, region->begin_ofs))
+    {
+        if (count == capacity)
+        {
+            region_data **newregions;
+
+            capacity = capacity ? capacity * 2 : 1024;
+            newregions = (region_data **) realloc(regions, capacity * sizeof(region_data *));
+            if (newregions == NULL) { ret = 3; goto done; }
+            regions = newregions;
+        }
+        regions[count++] = region;
+    }
+
+    if (count == 0) return 0;
+
+    // edges between the regions
+    for (i = 0; i < count; i++)
+    {
+        int decoded;
+
+        output = section_output_list_FindEntryEqual(Entry, regions[i]->end_ofs);
+        if (output == NULL || output->type != OT_INSTRUCTION) continue;
+
+        ud_set_input_buffer(&ud_obj, &(section[Entry].adr[output->ofs]), output->len + 1);
+        ud_set_pc(&ud_obj, section[Entry].start + output->ofs);
+        decoded = ud_disassemble(&ud_obj);
+        if (decoded != (int)(output->len + 1)) continue;
+
+        falls = 1;
+        target_ofs = (uint_fast32_t) -1;
+
+        switch (ud_obj.mnemonic)
+        {
+            case UD_Ijmp:
+                falls = 0;
+                // fallthrough
+            case UD_Ijo: case UD_Ijno: case UD_Ijb: case UD_Ijnb: case UD_Ijz: case UD_Ijnz:
+            case UD_Ijbe: case UD_Ijnbe: case UD_Ijs: case UD_Ijns: case UD_Ijp: case UD_Ijnp:
+            case UD_Ijl: case UD_Ijnl: case UD_Ijle: case UD_Ijnle: case UD_Ija: case UD_Ijae:
+            case UD_Ijg: case UD_Ijge: case UD_Ijc: case UD_Ijnc:
+            case UD_Ijcxz: case UD_Ijecxz: case UD_Ijrcxz:
+            case UD_Iloop: case UD_Iloope: case UD_Iloopne: case UD_Iloopnz: case UD_Iloopz:
+                if (ud_obj.operand[0].type == UD_OP_JIMM)
+                {
+                    uint_fast32_t address;
+
+                    if (ud_obj.operand[0].size == 32) address = ud_obj.operand[0].lval.sdword + (uint_fast32_t) ud_obj.pc;
+                    else if (ud_obj.operand[0].size == 8) address = ud_obj.operand[0].lval.sbyte + (uint_fast32_t) ud_obj.pc;
+                    else break;
+
+                    target_ofs = address - section[Entry].start;
+                }
+                break;
+            case UD_Iret:
+            case UD_Iretf:
+            case UD_Iiretd:
+            case UD_Iiretw:
+            case UD_Iiretq:
+                falls = 0;
+                break;
+            default:
+                break;
+        }
+
+        if (target_ofs != (uint_fast32_t) -1 && SR_region_find(regions, count, target_ofs, &index))
+        {
+            if (!SR_flow_edges_add(&edges, &edge_count, &edge_capacity, index, i)) { ret = 3; goto done; }
+        }
+
+        if (falls && i + 1 < count && regions[i + 1]->begin_ofs == output->ofs + output->len + 1)
+        {
+            if (!SR_flow_edges_add(&edges, &edge_count, &edge_capacity, i + 1, i)) { ret = 3; goto done; }
+        }
+    }
+
+    if (edge_count == 0) goto done;
+
+    qsort(edges, edge_count, sizeof(Flow_edge), SR_flow_edge_compare);
+
+    queue = (uint_fast32_t *) malloc(count * sizeof(uint_fast32_t) * 2);
+    queued = (unsigned char *) calloc(count, 1);
+    if (queue == NULL || queued == NULL) { ret = 3; goto done; }
+
+    // analyse every region once, ask the predecessors for what is missing
+    SR_llasm_dry_run = 1;
+    queue_head = 0;
+    queue_tail = 0;
+    for (i = 0; i < count; i++)
+    {
+        queue[queue_tail++] = i;
+        queued[i] = 1;
+    }
+
+    while (queue_head != queue_tail)
+    {
+        uint_fast32_t demand;
+
+        i = queue[queue_head];
+        queue_head = (queue_head + 1) % (count * 2);
+        queued[i] = 0;
+
+        SR_llasm_region_leftover = 0;
+        if (SR_disassemble_region_llasm(Entry, regions[i]) != 0) continue;
+
+        // only the real flags are passed on
+        demand = SR_llasm_region_leftover & FL_ALL;
+        if (demand == 0) continue;
+
+        // edges of the region i as a target
+        {
+            Flow_edge key;
+            uint_fast32_t low = 0, high = edge_count, first;
+
+            key.target = i;
+            key.source = 0;
+            while (low < high)
+            {
+                uint_fast32_t mid = (low + high) / 2;
+                if (SR_flow_edge_compare(&edges[mid], &key) < 0) low = mid + 1; else high = mid;
+            }
+            first = low;
+
+            for (k = first; k < edge_count && edges[k].target == i; k++)
+            {
+                region_data *pred = regions[edges[k].source];
+
+                regions[i]->flags_accept |= demand;
+
+                if ((pred->flags_to_write | demand) != pred->flags_to_write)
+                {
+                    pred->flags_to_write |= demand;
+
+                    if (!queued[edges[k].source])
+                    {
+                        queued[edges[k].source] = 1;
+                        queue[queue_tail] = edges[k].source;
+                        queue_tail = (queue_tail + 1) % (count * 2);
+                    }
+                }
+            }
+        }
+    }
+    SR_llasm_dry_run = 0;
+
+done:
+    SR_llasm_dry_run = 0;
+    free(regions);
+    free(edges);
+    free(queue);
+    free(queued);
+
+    return ret;
+}
+#endif
+
 int SR_full_disassembly(void)
 {
     unsigned int index;
@@ -460,6 +698,17 @@ int SR_full_disassembly(void)
         }
     }
 
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+    // flags that regions read before they write them
+    for (index = 0; index < num_sections; index++)
+    {
+        if (section[index].type != ST_CODE) continue;
+
+        ret = SR_llasm_propagate_flags(index);
+        if (ret) return ret;
+    }
+#endif
 
     // process regions
     for (index = 0; index < num_sections; index++)
