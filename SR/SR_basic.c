@@ -500,6 +500,15 @@ int SR_apply_fixup_info(void)
         section_entry_list_Insert(EIPObjectNum, EIP);
         bound = section_bound_list_Insert(EIPObjectNum, EIP);
         if (bound != NULL) bound->begin = 1;
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+        // the entry point is exported as start_ (c_start_), unless the
+        // source code information names it
+        if (section_alias_list_FindEntryEqual(EIPObjectNum, EIP) == NULL)
+        {
+            section_alias_list_Insert(EIPObjectNum, EIP, "start_");
+        }
+#endif
     }
 
     for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
