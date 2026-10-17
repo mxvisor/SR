@@ -281,9 +281,184 @@ int SR_disassemble_convert_fixup(const char *ostr, char *dst, fixup_data *fixup,
     return 0;
 }
 
+/* A procedure that never returns, found without a noret_procedures.sci entry:
+ * every path from its start ends in "mov ah,4Ch / int 21h" (DOS terminate),
+ * or in a call to such a procedure, and no path reaches a ret or leaves the
+ * code (an indirect jump, a jump out of the section, undecodable bytes: then
+ * the procedure is taken as returning).  The verdicts are remembered. */
+#define NORET_MAX_DEPTH 16
+#define NORET_MAX_STEPS 4096
+#define NORET_AH_UNKNOWN 0x100
+
+typedef struct { uint32_t address; int verdict; } noret_verdict;
+static noret_verdict *noret_verdicts;
+static size_t noret_verdicts_count, noret_verdicts_size;
+
+static int noret_verdict_find(uint32_t address)
+{
+    size_t i;
+    for (i = 0; i < noret_verdicts_count; i++)
+    {
+        if (noret_verdicts[i].address == address) return noret_verdicts[i].verdict;
+    }
+    return -1;
+}
+
+static void noret_verdict_add(uint32_t address, int verdict)
+{
+    if (noret_verdicts_count == noret_verdicts_size)
+    {
+        size_t size = noret_verdicts_size ? noret_verdicts_size * 2 : 256;
+        noret_verdict *grown = (noret_verdict *) realloc(noret_verdicts, size * sizeof(noret_verdict));
+        if (grown == NULL) return;
+        noret_verdicts = grown;
+        noret_verdicts_size = size;
+    }
+    noret_verdicts[noret_verdicts_count].address = address;
+    noret_verdicts[noret_verdicts_count].verdict = verdict;
+    noret_verdicts_count++;
+}
+
+static int noret_is_conditional_jump(enum ud_mnemonic_code m)
+{
+    switch (m)
+    {
+    case UD_Ijcxz: case UD_Ijecxz: case UD_Ijrcxz:
+    case UD_Ijo: case UD_Ijno: case UD_Ijb: case UD_Ijnb: case UD_Ijz: case UD_Ijnz:
+    case UD_Ijbe: case UD_Ijnbe: case UD_Ijs: case UD_Ijns: case UD_Ijp: case UD_Ijnp:
+    case UD_Ijl: case UD_Ijnl: case UD_Ijle: case UD_Ijnle:
+    case UD_Ija: case UD_Ijae: case UD_Ijg: case UD_Ijge: case UD_Ijc: case UD_Ijnc:
+    case UD_Iloop: case UD_Iloope: case UD_Iloopne:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static int noret_analyse(uint32_t start, int depth)
+{
+    typedef struct { uint32_t address; int ah; } noret_state;
+    noret_state stack[NORET_MAX_STEPS];
+    noret_state visited[NORET_MAX_STEPS];
+    int sp = 0, nvisited = 0, steps = 0, terminated = 0;
+    ud_t ud;
+
+    ud_init(&ud);
+    ud_set_mode(&ud, 32);
+    ud_set_syntax(&ud, UD_SYN_INTEL);
+
+    stack[sp].address = start;
+    stack[sp].ah = NORET_AH_UNKNOWN;
+    sp++;
+
+    while (sp > 0)
+    {
+        noret_state cur = stack[--sp];
+        int i, seen = 0;
+
+        for (i = 0; i < nvisited; i++)
+        {
+            if (visited[i].address == cur.address && visited[i].ah == cur.ah) { seen = 1; break; }
+        }
+        if (seen) continue;
+        if (nvisited == NORET_MAX_STEPS) return 0;
+        visited[nvisited++] = cur;
+
+        for (;;)
+        {
+            uint_fast32_t sec, rel;
+            enum ud_mnemonic_code m;
+            unsigned int length;
+
+            if (++steps > NORET_MAX_STEPS) return 0;
+            if (!SR_get_section_reladr(cur.address, &sec, &rel) || section[sec].type != ST_CODE
+                || rel >= section[sec].size)
+            {
+                return 0;
+            }
+
+            ud_set_input_buffer(&ud, &(section[sec].adr[rel]), section[sec].size - rel);
+            ud_set_pc(&ud, cur.address);
+            length = ud_disassemble(&ud);
+            if (length == 0) return 0;
+            m = ud.mnemonic;
+            cur.address += length;
+
+            if (m == UD_Iret || m == UD_Iretf || m == UD_Iiretw || m == UD_Iiretd || m == UD_Iiretq)
+            {
+                return 0;
+            }
+            else if (m == UD_Ijmp || noret_is_conditional_jump(m))
+            {
+                const struct ud_operand *op = &ud.operand[0];
+                uint32_t target;
+
+                if (op->type != UD_OP_JIMM) return 0;
+                if (op->size == 8) target = (uint32_t) (cur.address + op->lval.sbyte);
+                else if (op->size == 16) target = (uint32_t) (cur.address + op->lval.sword);
+                else target = (uint32_t) (cur.address + op->lval.sdword);
+
+                if (sp == NORET_MAX_STEPS) return 0;
+                stack[sp].address = target;
+                stack[sp].ah = cur.ah;
+                sp++;
+                if (m == UD_Ijmp) break;
+            }
+            else if (m == UD_Icall)
+            {
+                const struct ud_operand *op = &ud.operand[0];
+                uint32_t target;
+
+                if (op->type != UD_OP_JIMM || op->size != 32) return 0;
+                target = (uint32_t) (cur.address + op->lval.sdword);
+                if (depth >= NORET_MAX_DEPTH) return 0;
+                if (SR_disassemble_find_noret(target))
+                {
+                    terminated = 1;
+                    break;
+                }
+                cur.ah = NORET_AH_UNKNOWN;
+            }
+            else if (m == UD_Iint)
+            {
+                const struct ud_operand *op = &ud.operand[0];
+                if (op->type == UD_OP_IMM && op->lval.ubyte == 0x21 && cur.ah == 0x4c)
+                {
+                    terminated = 1;
+                    break;
+                }
+                cur.ah = NORET_AH_UNKNOWN;
+            }
+            else if (m == UD_Imov && ud.operand[0].type == UD_OP_REG && ud.operand[1].type == UD_OP_IMM)
+            {
+                enum ud_type reg = ud.operand[0].base;
+                uint32_t value = ud.operand[1].lval.udword;
+                if (reg == UD_R_AH) cur.ah = value & 0xff;
+                else if (reg == UD_R_AX) cur.ah = (value >> 8) & 0xff;
+                else if (reg == UD_R_EAX) cur.ah = (value >> 8) & 0xff;
+            }
+            else
+            {
+                const struct ud_operand *op = &ud.operand[0];
+                if ((op->type == UD_OP_REG && (op->base == UD_R_AH || op->base == UD_R_AX || op->base == UD_R_EAX))
+                    || m == UD_Icbw || m == UD_Icwde || m == UD_Ilahf || m == UD_Imul || m == UD_Iimul
+                    || m == UD_Idiv || m == UD_Iidiv || m == UD_Iin || m == UD_Icpuid || m == UD_Ixchg
+                    || m == UD_Ipopa || m == UD_Ipopad || m == UD_Ipop)
+                {
+                    cur.ah = NORET_AH_UNKNOWN;
+                }
+            }
+        }
+    }
+
+    return terminated;
+}
+
 int SR_disassemble_find_noret(uint_fast32_t address)
 {
     uint_fast32_t SecNum, RelAdr;
+    static int depth;
+    int verdict;
 
     if (SR_get_section_reladr(address, &SecNum, &RelAdr))
     {
@@ -291,6 +466,27 @@ int SR_disassemble_find_noret(uint_fast32_t address)
         {
             return 1;
         }
+
+        if (section[SecNum].type != ST_CODE) return 0;
+
+        verdict = noret_verdict_find((uint32_t) address);
+        if (verdict < 0)
+        {
+            /* a call back into a procedure being analysed counts as returning */
+            noret_verdict_add((uint32_t) address, 0);
+            depth++;
+            verdict = noret_analyse((uint32_t) address, depth);
+            depth--;
+            if (verdict)
+            {
+                size_t i;
+                for (i = 0; i < noret_verdicts_count; i++)
+                {
+                    if (noret_verdicts[i].address == (uint32_t) address) noret_verdicts[i].verdict = 1;
+                }
+            }
+        }
+        return verdict;
     }
 
     return 0;
