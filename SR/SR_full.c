@@ -523,11 +523,14 @@ static int SR_llasm_propagate_flags(unsigned int Entry)
         queue_head = (queue_head + 1) % (count * 2);
         queued[i] = 0;
 
+        // a replaced region is not translated
+        if (section_replace_list_FindEntryEqual(Entry, regions[i]->begin_ofs) != NULL) continue;
+
         SR_llasm_region_leftover = 0;
         if (SR_disassemble_region_llasm(Entry, regions[i]) != 0) continue;
 
         // only the real flags are passed on
-        demand = SR_llasm_region_leftover & FL_ALL;
+        demand = (SR_llasm_region_leftover & FL_WEAK) ? 0 : (SR_llasm_region_leftover & FL_ALL);
         if (demand == 0) continue;
 
         // edges of the region i as a target
