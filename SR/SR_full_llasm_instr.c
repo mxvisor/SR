@@ -1724,6 +1724,46 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
 
     switch (ud_obj.mnemonic)
     {
+        case UD_Iaad:
+        case UD_Iaam:
+            {
+                /* OF,AF,CF undefined, SF,ZF,PF - modified (from the new AL) */
+
+                if (ud_obj.operand[0].type == UD_OP_IMM)
+                {
+                    uint32_t base;
+
+                    base = ud_obj.operand[0].lval.ubyte;
+
+                    if (ud_obj.mnemonic == UD_Iaad)
+                    {
+                        // AL = AL + AH * base, AH = 0
+                        OUTPUT_STRING("lshr tmp1, eax, 8\n");
+                        OUTPUT_STRING("and tmp1, tmp1, 0xff\n");
+                        OUTPUT_PARAMSTRING("mul tmp1, tmp1, 0x%x\n", base);
+                        OUTPUT_STRING("add tmp1, tmp1, eax\n");
+                        OUTPUT_STRING("and tmp1, tmp1, 0xff\n");
+                        OUTPUT_STRING("ins16 eax, eax, tmp1\n");
+                    }
+                    else if (base != 0)
+                    {
+                        // AH = AL / base, AL = AL % base
+                        OUTPUT_STRING("and tmp1, eax, 0xff\n");
+                        OUTPUT_STRING("ins16 eax, eax, tmp1\n");
+                        OUTPUT_PARAMSTRING("mov tmp1, 0x%x\n", base);
+                        OUTPUT_STRING("DIV_16 tmp1\n");
+                    }
+
+                    if (ud_obj.mnemonic == UD_Iaad || base != 0)
+                    {
+                        if (SR_llasm_helper_and_8l(UD_Itest, LR_TMP1, LR_EAX, LR_NONE, 0xff000000))
+                        {
+                            flags_write = flags_to_write;
+                        }
+                    }
+                }
+            }
+            break;
         case UD_Iadc:
         case UD_Isbb:
             {
@@ -2420,19 +2460,71 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 {
                     if (ud_obj.operand[0].type == UD_OP_REG)
                     {
+                        if (ud_obj.operand[0].size == 32 || ud_obj.operand[0].size == 16)
+                        {
+                            uint32_t mask;
+
+                            mask = (ud_obj.operand[0].size == 32) ? 0x1f : 0x0f;
+
+                            if (ud_obj.operand[1].type == UD_OP_IMM)
+                            {
+                                uint32_t value;
+
+                                value = ud_obj.operand[1].lval.ubyte & mask;
+
+                                SR_disassemble_change_flags(pOutput, FL_CARRY, 0, 0);
+
+                                if (value != 0)
+                                {
+                                    OUTPUT_PARAMSTRING("lshr tmp1, %s, %i\n", X862LLSTR(ud_obj.operand[0].base), value);
+                                }
+                                else
+                                {
+                                    OUTPUT_PARAMSTRING("mov tmp1, %s\n", X862LLSTR(ud_obj.operand[0].base));
+                                }
+                                OUTPUT_STRING("and tmp1, tmp1, CF\n");
+                                OUTPUT_STRING("or eflags, eflags, tmp1\n");
+                            }
+                            else if (ud_obj.operand[1].type == UD_OP_REG)
+                            {
+                                SR_disassemble_change_flags(pOutput, FL_CARRY, 0, 0);
+
+                                OUTPUT_PARAMSTRING("and tmp2, %s, %i\n", X862LLSTR(ud_obj.operand[1].base), mask);
+                                OUTPUT_PARAMSTRING("lshr tmp1, %s, tmp2\n", X862LLSTR(ud_obj.operand[0].base));
+                                OUTPUT_STRING("and tmp1, tmp1, CF\n");
+                                OUTPUT_STRING("or eflags, eflags, tmp1\n");
+                            }
+                        }
                     }
                     else if (ud_obj.operand[0].type == UD_OP_MEM)
                     {
-                        if (ud_obj.operand[0].size == 32)
+                        if (ud_obj.operand[0].size == 32 || (ud_obj.operand[0].size == 16 && ud_obj.operand[1].type == UD_OP_IMM))
                         {
-                            if (ud_obj.operand[1].type == UD_OP_IMM)
+                            if (ud_obj.operand[1].type == UD_OP_REG && ud_obj.operand[0].size == 32)
+                            {
+                                SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+                                memadr.align = 1;
+
+                                OUTPUT_PARAMSTRING("ashr tmp1, %s, 3\n", X862LLSTR(ud_obj.operand[1].base));
+                                OUTPUT_STRING("add tmpadr, tmpadr, tmp1\n");
+
+                                SR_disassemble_read_mem_byte(cOutput, &memadr, LR_TMP1, READ8TO32ZERO);
+
+                                SR_disassemble_change_flags(pOutput, FL_CARRY, 0, 0);
+
+                                OUTPUT_PARAMSTRING("and tmp2, %s, 7\n", X862LLSTR(ud_obj.operand[1].base));
+                                OUTPUT_STRING("lshr tmp1, tmp1, tmp2\n");
+                                OUTPUT_STRING("and tmp1, tmp1, CF\n");
+                                OUTPUT_STRING("or eflags, eflags, tmp1\n");
+                            }
+                            else if (ud_obj.operand[1].type == UD_OP_IMM)
                             {
                                 uint32_t value;
 
                                 SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
                                 memadr.align = 1;
 
-                                value = ud_obj.operand[1].lval.ubyte & 0x1f;
+                                value = ud_obj.operand[1].lval.ubyte & ((ud_obj.operand[0].size == 32) ? 0x1f : 0x0f);
 
                                 if (value >= 8)
                                 {
@@ -4892,6 +4984,20 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                     }
                     else if (ud_obj.operand[0].base >= UD_R_AL && ud_obj.operand[0].base <= UD_R_BL)
                     {
+                        OUTPUT_STRING("and tmp1, eax, 0xff\n");
+                        OUTPUT_PARAMSTRING("and tmp2, %s, 0xff\n", X862LLSTR(ud_obj.operand[0].base));
+                        OUTPUT_STRING("mul tmp1, tmp1, tmp2\n");
+                        OUTPUT_STRING("and eax, eax, 0xffff0000\n");
+                        OUTPUT_STRING("or eax, eax, tmp1\n");
+
+                        if (flags_to_write & (FL_CARRY | FL_OVERFLOW))
+                        {
+                            SR_disassemble_change_flags(pOutput, Tflags_to_write, 0, 0);
+
+                            OUTPUT_STRING("and tmp2, tmp1, 0xff00\n");
+                            OUTPUT_STRING("cmovz tmp2, tmp3, 0, CF | OF\n");
+                            OUTPUT_STRING("or eflags, eflags, tmp3\n");
+                        }
                     }
                     else if (ud_obj.operand[0].base >= UD_R_AH && ud_obj.operand[0].base <= UD_R_BH)
                     {
@@ -6364,6 +6470,94 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
 
             }
             break;
+        case UD_Iscasd:
+            {
+                /* OS,SF,ZF,AF,PF,CF - modified */
+
+                if (ud_obj.pfx_rep || ud_obj.pfx_repe || ud_obj.pfx_repne)
+                {
+                    OUTPUT_STRING("ifnz ecx\n");
+
+                    if (ud_obj.pfx_repne)
+                    {
+                        OUTPUT_STRING("REPNE_SCASD\n");
+                    }
+                    else
+                    {
+                        OUTPUT_STRING("REPE_SCASD\n");
+                    }
+
+                    if (flags_to_write)
+                    {
+                        SR_llasm_helper_add_32(UD_Icmp, LR_TMP1, LR_EAX, LR_TMP0, 0);
+                    }
+
+                    OUTPUT_STRING("endif\n");
+                }
+                else
+                {
+                    if (flags_to_write)
+                    {
+                        OUTPUT_STRING("load tmp1, edi, 1\n");
+                        OUTPUT_STRING("and tmp2, eflags, DF\n");
+                        OUTPUT_STRING("cmovz tmp2, tmp2, 4, -4\n");
+                        OUTPUT_STRING("add edi, edi, tmp2\n");
+
+                        SR_llasm_helper_add_32(UD_Icmp, LR_TMP2, LR_EAX, LR_TMP1, 0);
+                    }
+                    else
+                    {
+                        OUTPUT_STRING("and tmp2, eflags, DF\n");
+                        OUTPUT_STRING("cmovz tmp2, tmp2, 4, -4\n");
+                        OUTPUT_STRING("add edi, edi, tmp2\n");
+                    }
+                }
+            }
+            break;
+        case UD_Iscasw:
+            {
+                /* OS,SF,ZF,AF,PF,CF - modified */
+
+                if (ud_obj.pfx_rep || ud_obj.pfx_repe || ud_obj.pfx_repne)
+                {
+                    OUTPUT_STRING("ifnz ecx\n");
+
+                    if (ud_obj.pfx_repne)
+                    {
+                        OUTPUT_STRING("REPNE_SCASW\n");
+                    }
+                    else
+                    {
+                        OUTPUT_STRING("REPE_SCASW\n");
+                    }
+
+                    if (flags_to_write)
+                    {
+                        SR_llasm_helper_add_16(UD_Icmp, LR_TMP1, LR_EAX, LR_TMP0, 0);
+                    }
+
+                    OUTPUT_STRING("endif\n");
+                }
+                else
+                {
+                    if (flags_to_write)
+                    {
+                        OUTPUT_STRING("load16z tmp1, edi, 1\n");
+                        OUTPUT_STRING("and tmp2, eflags, DF\n");
+                        OUTPUT_STRING("cmovz tmp2, tmp2, 2, -2\n");
+                        OUTPUT_STRING("add edi, edi, tmp2\n");
+
+                        SR_llasm_helper_add_16(UD_Icmp, LR_TMP2, LR_EAX, LR_TMP1, 0);
+                    }
+                    else
+                    {
+                        OUTPUT_STRING("and tmp2, eflags, DF\n");
+                        OUTPUT_STRING("cmovz tmp2, tmp2, 2, -2\n");
+                        OUTPUT_STRING("add edi, edi, tmp2\n");
+                    }
+                }
+            }
+            break;
         case UD_Iseta:
         case UD_Isetb:
         case UD_Isetbe:
@@ -6537,6 +6731,44 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
 
                                 OUTPUT_PARAMSTRING("or %s, tmp1, tmp2\n", X86REGSTR(ud_obj.operand[0].base));
                             }
+                        }
+                    }
+                    else if (ud_obj.operand[0].base >= UD_R_AX && ud_obj.operand[0].base <= UD_R_DI &&
+                             ud_obj.operand[1].type == UD_OP_REG &&
+                             ud_obj.operand[2].type == UD_OP_IMM)
+                    {
+                        uint32_t value;
+
+                        value = SR_disassemble_get_value(&(ud_obj.operand[2]), ZERO_EXTEND) & 0x1f;
+
+                        if (flags_to_write)
+                        {
+                            fprintf(stderr, "Error: flags not calculated - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                        }
+
+                        if (value == 0 || value > 16)
+                        {
+                            // no change (a count above the operand size is undefined)
+                            flags_write = 0;
+                        }
+                        else
+                        {
+                            OUTPUT_PARAMSTRING("and tmp1, %s, 0xffff\n", X862LLSTR(ud_obj.operand[0].base));
+                            OUTPUT_PARAMSTRING("and tmp2, %s, 0xffff\n", X862LLSTR(ud_obj.operand[1].base));
+
+                            if (ud_obj.mnemonic == UD_Ishld)
+                            {
+                                OUTPUT_PARAMSTRING("shl tmp1, tmp1, %i\n", value);
+                                OUTPUT_PARAMSTRING("lshr tmp2, tmp2, %i\n", 16 - value);
+                            }
+                            else
+                            {
+                                OUTPUT_PARAMSTRING("lshr tmp1, tmp1, %i\n", value);
+                                OUTPUT_PARAMSTRING("shl tmp2, tmp2, %i\n", 16 - value);
+                            }
+
+                            OUTPUT_STRING("or tmp1, tmp1, tmp2\n");
+                            OUTPUT_PARAMSTRING("ins16 %s, %s, tmp1\n", X862LLSTR(ud_obj.operand[0].base), X862LLSTR(ud_obj.operand[0].base));
                         }
                     }
                 }

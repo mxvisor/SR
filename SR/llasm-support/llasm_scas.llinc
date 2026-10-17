@@ -24,6 +24,10 @@
 
 func x86_repe_scasb $
 func x86_repne_scasb $
+func x86_repe_scasw $
+func x86_repne_scasw $
+func x86_repe_scasd $
+func x86_repne_scasd $
 
 macro REPE_SCASB
     call x86_repe_scasb $
@@ -31,4 +35,20 @@ endm
 
 macro REPNE_SCASB
     call x86_repne_scasb $
+endm
+
+macro REPE_SCASW
+    call x86_repe_scasw $
+endm
+
+macro REPNE_SCASW
+    call x86_repne_scasw $
+endm
+
+macro REPE_SCASD
+    call x86_repe_scasd $
+endm
+
+macro REPNE_SCASD
+    call x86_repne_scasd $
 endm
