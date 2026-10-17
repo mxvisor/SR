@@ -275,6 +275,33 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
     {
         output = section_output_list_FindEntryEqual(Entry, offset);
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+        if (output == NULL)
+        {
+            // a jump into the middle of an already decoded instruction (overlapping
+            // instructions): decode the target as an instruction of its own
+            output_data *prev = section_output_list_FindEntryEqualOrLower(Entry, offset);
+            if (prev != NULL && prev->type == OT_INSTRUCTION && prev->ofs + prev->len >= offset)
+            {
+                bound_data *bound;
+                uint_fast32_t after = prev->ofs + prev->len + 1;
+
+                output = section_output_list_Insert(Entry, offset);
+                if (output != NULL)
+                {
+                    output->has_label = 1;
+                    // the instruction in front ends a region and continues after the overlap
+                    bound = section_bound_list_Insert(Entry, offset);
+                    if (bound != NULL) bound->begin = 1;
+                    bound = section_bound_list_Insert(Entry, after);
+                    if (bound != NULL) bound->begin = 1;
+                    prev = section_output_list_FindEntryEqual(Entry, after);
+                    if (prev != NULL) prev->has_label = 1;
+                }
+            }
+        }
+#endif
+
         if (output == NULL)
         {
             fprintf(stderr, "Error: output not found - %i - 0x%x\n", Entry, (unsigned int)offset);
