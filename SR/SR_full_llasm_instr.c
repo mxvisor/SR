@@ -216,6 +216,10 @@ static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fi
     {
         sprintf(cAdr, "0x%x", (unsigned int)(fixup->sofs + section[Entry].start + 4));
     }
+    else if (fixup->type == FT_SEGMENT)
+    {
+        sprintf(cAdr, "0x%x", 0);
+    }
     else
     {
         sprintf(cAdr, "0x%x", (unsigned int)(section[fixup->tsec].start + fixup->tofs));
@@ -1649,14 +1653,18 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
         if (fixup1->sofs >= cur_ofs + decoded_length) fixup1 = NULL;
         else
         {
-            if (fixup1->sofs > cur_ofs + decoded_length - 4)
+            int fixuplen, fixuplen2;
+
+            fixuplen = (fixup1->type == FT_NORMAL || fixup1->type == FT_SELFREL)?4:2;
+
+            if (fixup1->sofs > cur_ofs + decoded_length - fixuplen)
             {
                 fprintf(stderr, "Error: decoding fixup mismatch - %i - %i\n", Entry, (unsigned int)cur_ofs);
 
                 return 4;
             }
 
-            if (fixup1->sofs != cur_ofs + decoded_length - 4)
+            if (fixup1->sofs != cur_ofs + decoded_length - fixuplen)
             {
                 fixup2 = section_fixup_list_FindEntryHigher(Entry, fixup1->sofs);
 
@@ -1665,7 +1673,9 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                     if (fixup2->sofs >= cur_ofs + decoded_length) fixup2 = NULL;
                     else
                     {
-                        if (fixup2->sofs > cur_ofs + decoded_length - 4)
+                        fixuplen2 = (fixup2->type == FT_NORMAL || fixup2->type == FT_SELFREL)?4:2;
+
+                        if (fixup2->sofs > cur_ofs + decoded_length - fixuplen2)
                         {
                             fprintf(stderr, "Error: decoding fixup mismatch - %i - %i\n", Entry, (unsigned int)cur_ofs);
 

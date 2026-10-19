@@ -348,14 +348,18 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
             if (fixup->sofs >= offset + decoded_length) fixup = NULL;
             else
             {
-                if (fixup->sofs > offset + decoded_length - 4)
+                int fixuplen, fixuplen2;
+
+                fixuplen = (fixup->type == FT_NORMAL || fixup->type == FT_SELFREL)?4:2;
+
+                if (fixup->sofs > offset + decoded_length - fixuplen)
                 {
                     fprintf(stderr, "Error: decoding fixup mismatch - %i - %i\n", Entry, (unsigned int)offset);
 
                     return 2;
                 }
 
-                if (fixup->sofs != offset + decoded_length - 4)
+                if (fixup->sofs != offset + decoded_length - fixuplen)
                 {
                     fixup2 = section_fixup_list_FindEntryHigher(Entry, fixup->sofs);
 
@@ -364,7 +368,9 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
                         if (fixup2->sofs >= offset + decoded_length) fixup2 = NULL;
                         else
                         {
-                            if (fixup2->sofs > offset + decoded_length - 4)
+                            fixuplen2 = (fixup2->type == FT_NORMAL || fixup2->type == FT_SELFREL)?4:2;
+
+                            if (fixup2->sofs > offset + decoded_length - fixuplen2)
                             {
                                 fprintf(stderr, "Error: decoding fixup mismatch - %i - %i\n", Entry, (unsigned int)offset);
 
@@ -1254,17 +1260,20 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
 #endif
                     break;
                 }
-
                 if (fixup != NULL)
                 {
-                    if (fixup->type != FT_NORMAL)
+                    if (fixup->type == FT_SELFREL)
                     {
                         return -50;
                     }
                     else
                     {
-                        if (((ud_obj.operand[0].type == UD_OP_IMM && ud_obj.operand[0].size == 32) || ud_obj.operand[0].type == UD_OP_MEM) ||
-                            ((ud_obj.operand[1].type == UD_OP_IMM && ud_obj.operand[1].size == 32) || ud_obj.operand[1].type == UD_OP_MEM))
+                        int fixuplen8;
+
+                        fixuplen8 = (fixup->type == FT_NORMAL || fixup->type == FT_SELFREL)?32:16;
+
+                        if (((ud_obj.operand[0].type == UD_OP_IMM && ud_obj.operand[0].size == fixuplen8) || ud_obj.operand[0].type == UD_OP_MEM) ||
+                            ((ud_obj.operand[1].type == UD_OP_IMM && ud_obj.operand[1].size == fixuplen8) || ud_obj.operand[1].type == UD_OP_MEM))
                         {
                             extrn = section_extrn_list_FindEntryEqual(fixup->tsec, fixup->tofs);
 
