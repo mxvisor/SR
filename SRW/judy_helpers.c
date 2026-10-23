@@ -518,6 +518,8 @@ region_data *section_region_list_Insert(unsigned int SecNum, Word_t Index, uint_
 
     region->begin_ofs = (uint_fast32_t)Index;
     region->end_ofs = end_ofs;
+    region->flags_to_write = 0;
+    region->flags_accept = 0;
 
     JLI(region_value, section[SecNum].region_list, Index);
     if ((region_value == PJERR) || (region_value == NULL))

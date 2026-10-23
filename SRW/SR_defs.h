@@ -142,6 +142,8 @@ typedef struct _bound_data_ {
 typedef struct _region_data_ {
     uint_fast32_t begin_ofs;    // region begin offset
     uint_fast32_t end_ofs;      // region end offset
+    uint_fast32_t flags_to_write;   // flags needed after the region end (by the regions that follow it)
+    uint_fast32_t flags_accept;     // flags the region reads before writing them (set by its predecessors)
 } region_data;
 
 typedef struct _export_data_ {
