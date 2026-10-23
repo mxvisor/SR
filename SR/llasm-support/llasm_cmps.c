@@ -84,3 +84,42 @@ EXTERNC uint32_t CCALL x86_repne_cmpsb(CPU)
     return srcvalue1 | (srcvalue2 << 8);
 }
 
+/* the word and doubleword forms leave the last pair of elements behind esi
+ * and edi: the caller takes them from there to set the flags, because two
+ * values do not fit in the return value */
+
+#define X86_REP_CMPS(NAME, TYPE, STEP, STOP_WHEN_EQUAL) \
+EXTERNC uint32_t CCALL NAME(CPU) \
+{ \
+    int32_t dir; \
+    uint32_t srcptr1, srcptr2, counter; \
+    TYPE srcvalue1, srcvalue2; \
+\
+    dir = (eflags & DF)?-(STEP):(STEP); \
+\
+    counter = ecx; \
+    srcptr1 = esi; \
+    srcptr2 = edi; \
+\
+    do { \
+        srcvalue1 = *((TYPE *)REG2PTR(srcptr1)); \
+        srcvalue2 = *((TYPE *)REG2PTR(srcptr2)); \
+        srcptr1 += dir; \
+        srcptr2 += dir; \
+\
+        counter--; \
+\
+        if ((srcvalue1 == srcvalue2) == (STOP_WHEN_EQUAL)) break; \
+    } while (counter != 0); \
+\
+    ecx = counter; \
+    esi = srcptr1; \
+    edi = srcptr2; \
+\
+    return 0; \
+}
+
+X86_REP_CMPS(x86_repe_cmpsw, uint16_t, 2, 0)
+X86_REP_CMPS(x86_repne_cmpsw, uint16_t, 2, 1)
+X86_REP_CMPS(x86_repe_cmpsd, uint32_t, 4, 0)
+X86_REP_CMPS(x86_repne_cmpsd, uint32_t, 4, 1)
