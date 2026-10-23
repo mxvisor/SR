@@ -429,7 +429,7 @@ static void SR_disassemble_find_distance(unsigned int Entry, const output_data *
     }
 }
 
-// trashes LR_TMPADR, LR_TMP0
+// trashes LR_TMPADR, LR_TMP5
 static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, const ud_operand_t *op, const fixup_data *fixup, const extrn_data *extrn, enum ud_type reg, enum madr_address_mode mode, struct madr_result *result)
 {
     /*
@@ -844,8 +844,8 @@ static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, 
                     }
                     else
                     {
-                        ADD_OSTR("shl tmp0, %s, %i\n", X86REGSTR(op->index), lshift)
-                        ADD_OSTR("add %s, tmpadr, tmp0\n", (numop)?LLREGSTR(LR_TMPADR):LLREGSTR(madrreg))
+                        ADD_OSTR("shl tmp5, %s, %i\n", X86REGSTR(op->index), lshift)
+                        ADD_OSTR("add %s, tmpadr, tmp5\n", (numop)?LLREGSTR(LR_TMPADR):LLREGSTR(madrreg))
                     }
                 }
             }
