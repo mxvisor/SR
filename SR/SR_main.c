@@ -271,6 +271,8 @@ static void initialize_values(void)
 	invalid_code_fixups_name = NULL;
 	list_data_to_code_fixups = 0;
 	data_to_code_fixups_name = NULL;
+	list_handlers = 0;
+	handlers_name = NULL;
 
 	esp_dword_aligned = 0;
 	ebp_dword_aligned = 0;
@@ -332,6 +334,11 @@ int main (int argc, char *argv[])
 			{
 				list_invalid_code_fixups = 1;
 				invalid_code_fixups_name = &((*argv)[27]);
+			}
+			else if (strncasecmp(*argv, "--list_handlers=", 16) == 0)
+			{
+				list_handlers = 1;
+				handlers_name = &((*argv)[16]);
 			}
 			else if (strncasecmp(*argv, "--list_data_to_code_fixups=", 27) == 0)
 			{

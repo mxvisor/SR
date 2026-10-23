@@ -580,6 +580,287 @@ done:
 }
 #endif
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+/* The handlers a program gives to the system.  SR follows code only from the
+ * entry points and the calls it can see, so a routine whose address the
+ * program hands to INT 21h AH=25h (an interrupt vector) is reached by no
+ * one, and the fixup that holds its address is listed as invalid.  The
+ * program is analysed after the first pass, and the routines found are what
+ * fixup_interpret_as_code.sci would list by hand (--list_handlers=FILE; the
+ * SDK's SR run feeds them to a second one):
+ *  - INT 21h with AH=25h, EDX loaded with an address fixup in the same block;
+ *  - the same INT 21h in a routine that takes EDX from its stack argument
+ *    ("mov edx,[ebp+N]" after "push ebp; mov ebp,esp"): then every call of the
+ *    routine passes the handler in that argument, either as a fixup itself
+ *    or through a register loaded with one. */
+typedef struct _Handler_insn_ {
+    uint_fast32_t ofs;
+    uint_fast32_t target;       // the call's target
+    enum ud_mnemonic_code mnemonic;
+    int reg;                    // the register family the instruction writes, -1 if none
+    int pushreg;                // the register family a push takes, -1 if not a register push
+    int ah;                     // AH an instruction sets from an immediate, -1 if not
+    int imm_fixup;              // the instruction holds a fixup to code that is not code yet
+    uint_fast32_t fixup_address;
+    int stack_arg;              // "mov r,[ebp+N]": N, -1 if not
+    int ebp_frame;              // "mov ebp,esp"
+    int ah_write;               // the instruction writes AH (AX, EAX or AH itself)
+    int low_add;                // "add ax,x" / "add al,x": the vector number is added to AL, AH is kept
+    int intno;
+    int branch;                 // leaves the straight line: jmp, call, ret (a conditional jump does not)
+} Handler_insn;
+
+typedef struct _Handler_collect_ {
+    unsigned int Entry;
+    Handler_insn *insn;
+    size_t count, capacity;
+} Handler_collect;
+
+static int handler_reg_family(enum ud_type reg)
+{
+    if (reg >= UD_R_AL && reg <= UD_R_BH) return (int)(reg - UD_R_AL) & 3;
+    if (reg >= UD_R_AX && reg <= UD_R_DI) return (int)(reg - UD_R_AX);
+    if (reg >= UD_R_EAX && reg <= UD_R_EDI) return (int)(reg - UD_R_EAX);
+    return -1;
+}
+
+static void handler_collect_insn(output_data *output, void *data)
+{
+    Handler_collect *collect = (Handler_collect *) data;
+    Handler_insn *insn;
+    ud_t u;
+    fixup_data *fixup;
+    const struct ud_operand *op0, *op1;
+    const unsigned int Entry = collect->Entry;
+
+    if (output->type != 2) return;
+    if (collect->count == collect->capacity)
+    {
+        collect->capacity = collect->capacity ? collect->capacity * 2 : 4096;
+        collect->insn = (Handler_insn *) realloc(collect->insn, collect->capacity * sizeof(Handler_insn));
+        if (collect->insn == NULL) { collect->count = collect->capacity = 0; return; }
+    }
+    insn = &collect->insn[collect->count++];
+    memset(insn, 0, sizeof(*insn));
+    insn->reg = insn->pushreg = insn->ah = insn->stack_arg = insn->intno = -1;
+
+    ud_init(&u);
+    ud_set_mode(&u, 32);
+    ud_set_input_buffer(&u, &(section[Entry].adr[output->ofs]), section[Entry].size - output->ofs);
+    ud_set_pc(&u, section[Entry].start + output->ofs);
+    if (ud_disassemble(&u) == 0) { collect->count--; return; }
+
+    insn->ofs = output->ofs;
+    insn->mnemonic = u.mnemonic;
+    op0 = &u.operand[0];
+    op1 = &u.operand[1];
+
+    switch (u.mnemonic)
+    {
+        case UD_Ijmp: case UD_Iret: case UD_Iretf: case UD_Iiretd: case UD_Iiretw: case UD_Icall:
+            insn->branch = 1;
+            break;
+        default:
+            break;
+    }
+    if (u.mnemonic == UD_Icall && op0->type == UD_OP_JIMM && op0->size == 32)
+    {
+        insn->target = op0->lval.sdword + (uint_fast32_t) u.pc;
+    }
+    if (u.mnemonic == UD_Iint) insn->intno = op0->lval.ubyte;
+    if (u.mnemonic == UD_Ipush && op0->type == UD_OP_REG) insn->pushreg = handler_reg_family(op0->base);
+
+    if (u.mnemonic != UD_Ipush && u.mnemonic != UD_Icmp && u.mnemonic != UD_Itest && op0->type == UD_OP_REG)
+    {
+        insn->reg = handler_reg_family(op0->base);
+    }
+    if (u.mnemonic == UD_Ipop && op0->type == UD_OP_REG) insn->reg = handler_reg_family(op0->base);
+
+    if (insn->reg == 0 && op0->base != UD_R_AL) insn->ah_write = 1;
+
+    if (u.mnemonic == UD_Iadd && op0->type == UD_OP_REG && (op0->base == UD_R_AX || op0->base == UD_R_AL)
+        && op1->type != UD_OP_IMM)
+    {
+        insn->low_add = 1;
+    }
+
+    if (u.mnemonic == UD_Imov && op0->type == UD_OP_REG)
+    {
+        if (op0->base == UD_R_AH && op1->type == UD_OP_IMM) insn->ah = op1->lval.ubyte;
+        else if (op0->base == UD_R_AX && op1->type == UD_OP_IMM) insn->ah = op1->lval.uword >> 8;
+        else if (op0->base == UD_R_EAX && op1->type == UD_OP_IMM) insn->ah = (op1->lval.udword >> 8) & 0xff;
+        if (u.mnemonic == UD_Imov && op1->type == UD_OP_MEM && op1->base == UD_R_EBP && op1->index == UD_NONE
+            && op1->offset == 8 && op1->lval.sbyte >= 8)
+        {
+            insn->stack_arg = op1->lval.sbyte;
+        }
+        if (op0->base == UD_R_EBP && op1->type == UD_OP_REG && op1->base == UD_R_ESP) insn->ebp_frame = 1;
+    }
+
+    // a fixup in the instruction that points to code nobody has disassembled
+    fixup = section_fixup_list_FindEntryEqualOrHigher(Entry, output->ofs);
+    if (fixup != NULL && fixup->sofs <= output->ofs + output->len
+        && fixup->type == FT_NORMAL && fixup->tsec < num_sections && section[fixup->tsec].type == ST_CODE
+        && ((u.mnemonic == UD_Imov && op1->type == UD_OP_IMM) || (u.mnemonic == UD_Ipush && op0->type == UD_OP_IMM)
+            || (u.mnemonic == UD_Ilea && op1->type == UD_OP_MEM && op1->base == UD_NONE && op1->index == UD_NONE)))
+    {
+        output_data *target = section_output_list_FindEntryEqual(fixup->tsec, fixup->tofs);
+        if (target == NULL || target->type != 2)
+        {
+            insn->imm_fixup = 1;
+            insn->fixup_address = section[fixup->tsec].start + fixup->tofs;
+        }
+    }
+}
+
+typedef struct _Handler_wrapper_ {
+    uint_fast32_t address;
+    int argument;
+} Handler_wrapper;
+
+static void handler_report(FILE *out, uint_fast32_t address, uint_fast32_t *seen, size_t *seen_count)
+{
+    char label[32];
+    size_t i;
+
+    for (i = 0; i < *seen_count; i++) if (seen[i] == address) return;
+    seen[(*seen_count)++] = address;
+    SR_get_label(label, address);
+    fprintf(out, "%s\n", label);
+}
+
+static int handler_find_writer(const Handler_insn *insn, long from, int reg)
+{
+    long j;
+
+    for (j = from; j >= 0 && j > from - 32; j--)
+    {
+        if (reg == 0)
+        {
+            // AH: the writers of AL alone and the vector number added to AL leave it
+            if (insn[j].ah_write && !insn[j].low_add) return (int) j;
+        }
+        else if (insn[j].reg == reg) return (int) j;
+        if (insn[j].branch) break;
+    }
+    return -1;
+}
+
+static void handler_scan_section(uint_fast32_t start, const Handler_insn *insn, size_t count, FILE *out, uint_fast32_t *seen, size_t *seen_count,
+                                 Handler_wrapper *wrappers, size_t *wrapper_count)
+{
+    size_t i;
+
+    // INT 21h AH=25h: EDX is the handler
+    for (i = 0; i < count; i++)
+    {
+        int w;
+
+        if (insn[i].intno != 0x21) continue;
+        w = handler_find_writer(insn, (long) i - 1, 0);
+        if (w < 0 || insn[w].ah != 0x25) continue;
+        w = handler_find_writer(insn, (long) i - 1, 2);
+        if (w < 0) continue;
+        if (insn[w].imm_fixup)
+        {
+            handler_report(out, insn[w].fixup_address, seen, seen_count);
+        }
+        else if (insn[w].stack_arg >= 8 && *wrapper_count < 64)
+        {
+            long j;
+
+            for (j = w; j > 0 && j > (long) w - 64; j--)
+            {
+                if (insn[j].ebp_frame && insn[j - 1].mnemonic == UD_Ipush)
+                {
+                    wrappers[*wrapper_count].address = start + insn[j - 1].ofs;
+                    wrappers[*wrapper_count].argument = (insn[w].stack_arg - 8) / 4;
+                    (*wrapper_count)++;
+                    break;
+                }
+                if (insn[j].mnemonic == UD_Iret) break;
+            }
+        }
+    }
+}
+
+static void handler_scan_calls(const Handler_insn *insn, size_t count, const Handler_wrapper *wrappers, size_t wrapper_count,
+                               FILE *out, uint_fast32_t *seen, size_t *seen_count)
+{
+    size_t i, wi;
+
+    for (i = 0; i < count; i++)
+    {
+        if (insn[i].mnemonic != UD_Icall || insn[i].target == 0) continue;
+        for (wi = 0; wi < wrapper_count; wi++)
+        {
+            long j;
+            int pushes = 0;
+
+            if (wrappers[wi].address != insn[i].target) continue;
+            for (j = (long) i - 1; j >= 0 && j > (long) i - 48; j--)
+            {
+                if (insn[j].branch) break;
+                if (insn[j].mnemonic != UD_Ipush) continue;
+                if (pushes++ != wrappers[wi].argument) continue;
+                if (insn[j].imm_fixup)
+                {
+                    handler_report(out, insn[j].fixup_address, seen, seen_count);
+                }
+                else if (insn[j].pushreg >= 0)
+                {
+                    int w = handler_find_writer(insn, j - 1, insn[j].pushreg);
+                    if (w >= 0 && insn[w].imm_fixup) handler_report(out, insn[w].fixup_address, seen, seen_count);
+                }
+                break;
+            }
+        }
+    }
+}
+
+static int SR_list_handlers(const char *name)
+{
+    FILE *out;
+    unsigned int index;
+    Handler_collect *collects;
+    Handler_wrapper wrappers[64];
+    size_t wrapper_count = 0, seen_count = 0;
+    uint_fast32_t seen[1024];
+
+    out = fopen(name, "wt");
+    if (out == NULL)
+    {
+        fprintf(stderr, "Error: cannot create %s\n", name);
+        return 1;
+    }
+    collects = (Handler_collect *) calloc(num_sections, sizeof(Handler_collect));
+    if (collects == NULL) { fclose(out); return 1; }
+
+    for (index = 0; index < num_sections; index++)
+    {
+        if (section[index].type != ST_CODE) continue;
+        collects[index].Entry = index;
+        section_output_list_ForEach(index, &handler_collect_insn, &collects[index]);
+    }
+    // the wrappers are found in every section before the calls of any are looked at
+    for (index = 0; index < num_sections; index++)
+    {
+        if (section[index].type != ST_CODE) continue;
+        handler_scan_section(section[index].start, collects[index].insn, collects[index].count, out, seen, &seen_count, wrappers, &wrapper_count);
+    }
+    for (index = 0; index < num_sections; index++)
+    {
+        if (section[index].type != ST_CODE) continue;
+        handler_scan_calls(collects[index].insn, collects[index].count, wrappers, wrapper_count, out, seen, &seen_count);
+        free(collects[index].insn);
+    }
+    free(collects);
+    fclose(out);
+    return 0;
+}
+#endif
+
+
 int SR_full_disassembly(void)
 {
     unsigned int index;
@@ -658,6 +939,14 @@ int SR_full_disassembly(void)
             }
         }
     }
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+    if (list_handlers)
+    {
+        ret = SR_list_handlers(handlers_name);
+        if (ret) return ret;
+    }
+#endif
 
 #if ((OUTPUT_TYPE == OUT_X86) || (OUTPUT_TYPE == OUT_ARM_LINUX) || (OUTPUT_TYPE == OUT_LLASM) || (OUTPUT_TYPE == OUT_X64))
     // align code and data in code segments

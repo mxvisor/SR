@@ -56,6 +56,8 @@ EXTERNAL_VARIABLE char *invalid_code_fixups_name;
 
 EXTERNAL_VARIABLE int list_data_to_code_fixups;
 EXTERNAL_VARIABLE char *data_to_code_fixups_name;
+EXTERNAL_VARIABLE int list_handlers;
+EXTERNAL_VARIABLE char *handlers_name;
 
 EXTERNAL_VARIABLE int esp_dword_aligned;
 EXTERNAL_VARIABLE int SR_llasm_dry_run;                 // llasm regions are only analysed: the output is left unchanged
