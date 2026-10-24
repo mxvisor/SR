@@ -79,6 +79,7 @@ EXTERNC void CCALL x86_cpuid(CPU)
         __cpuid_count(leaf, subleaf, a, b, c, d);
 #endif
 
+        (void)leaf; (void)subleaf;      /* unused where there is no cpuid instruction */
         eax = a;
         ebx = b;
         ecx = c;
