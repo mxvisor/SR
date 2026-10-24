@@ -40,6 +40,8 @@ typedef struct {
     /* exact copy of a 64-bit integer loaded into a register (FILD), see llasm_float.c */
     int64_t _st_i64[8];
     uint32_t _st_i64_valid;
+    /* mm0..mm7 (llasm_mmx.c); after the other fields: llasm knows only the first ones */
+    uint64_t _mm[8];
 } _cpu;
 
 #define CPU _cpu *cpu

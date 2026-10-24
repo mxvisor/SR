@@ -2367,6 +2367,294 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ipaddb:
+        case UD_Ipaddw:
+        case UD_Ipaddd:
+        case UD_Ipaddq:
+        case UD_Ipsubb:
+        case UD_Ipsubw:
+        case UD_Ipsubd:
+        case UD_Ipsubq:
+        case UD_Ipaddsb:
+        case UD_Ipaddsw:
+        case UD_Ipaddusb:
+        case UD_Ipaddusw:
+        case UD_Ipsubsb:
+        case UD_Ipsubsw:
+        case UD_Ipsubusb:
+        case UD_Ipsubusw:
+        case UD_Ipmullw:
+        case UD_Ipmulhw:
+        case UD_Ipmulhuw:
+        case UD_Ipmaddwd:
+        case UD_Ipmuludq:
+        case UD_Ipcmpeqb:
+        case UD_Ipcmpeqw:
+        case UD_Ipcmpeqd:
+        case UD_Ipcmpgtb:
+        case UD_Ipcmpgtw:
+        case UD_Ipcmpgtd:
+        case UD_Ipand:
+        case UD_Ipandn:
+        case UD_Ipor:
+        case UD_Ipxor:
+        case UD_Ipacksswb:
+        case UD_Ipackssdw:
+        case UD_Ipackuswb:
+        case UD_Ipunpcklbw:
+        case UD_Ipunpcklwd:
+        case UD_Ipunpckldq:
+        case UD_Ipunpckhbw:
+        case UD_Ipunpckhwd:
+        case UD_Ipunpckhdq:
+        case UD_Ipsllw:
+        case UD_Ipslld:
+        case UD_Ipsllq:
+        case UD_Ipsrlw:
+        case UD_Ipsrld:
+        case UD_Ipsrlq:
+        case UD_Ipsraw:
+        case UD_Ipsrad:
+        case UD_Ipavgb:
+        case UD_Ipavgw:
+        case UD_Ipmaxub:
+        case UD_Ipmaxsw:
+        case UD_Ipminub:
+        case UD_Ipminsw:
+        case UD_Ipsadbw:
+            {
+                /* MMX: no flags affected; llasm_mmx.c does the work, mm0..mm7 are cpu->_mm */
+                char mmxop[24];
+                const char *mnemonic_name = ud_lookup_mnemonic(ud_obj.mnemonic);
+                unsigned int mmxi;
+
+                for (mmxi = 0; mnemonic_name[mmxi] != 0 && mmxi < 16; mmxi++)
+                {
+                    mmxop[4 + mmxi] = (mnemonic_name[mmxi] >= 'a' && mnemonic_name[mmxi] <= 'z') ? (mnemonic_name[mmxi] - 'a' + 'A') : mnemonic_name[mmxi];
+                }
+                mmxop[4 + mmxi] = 0;
+                memcpy(mmxop, "MMX_", 4);
+
+                if (ud_obj.operand[0].type == UD_OP_REG &&
+                    ud_obj.operand[0].base >= UD_R_MM0 && ud_obj.operand[0].base <= UD_R_MM7)
+                {
+                    int mmxdst = ud_obj.operand[0].base - UD_R_MM0;
+
+                    if (ud_obj.operand[1].type == UD_OP_REG &&
+                        ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_rr $, %s, %i, %i\n", mmxop, mmxdst, ud_obj.operand[1].base - UD_R_MM0);
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                        OUTPUT_PARAMSTRING("call x86_mmx_rm $, %s, %i, %s\n", mmxop, mmxdst, memadr.madr);
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_IMM)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_ri $, %s, %i, %u\n", mmxop, mmxdst, (unsigned int)(SR_disassemble_get_value(&(ud_obj.operand[1]), ZERO_EXTEND) & 0xff));
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Error: unsupported MMX operand - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Imovq:
+        case UD_Imovntq:
+            {
+                /* no flags affected */
+
+                if (ud_obj.operand[0].type == UD_OP_REG &&
+                    ud_obj.operand[0].base >= UD_R_MM0 && ud_obj.operand[0].base <= UD_R_MM7)
+                {
+                    int mmxdst = ud_obj.operand[0].base - UD_R_MM0;
+
+                    if (ud_obj.operand[1].type == UD_OP_REG &&
+                        ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_rr $, MMX_MOVQ, %i, %i\n", mmxdst, ud_obj.operand[1].base - UD_R_MM0);
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                        OUTPUT_PARAMSTRING("call x86_mmx_rm $, MMX_MOVQ, %i, %s\n", mmxdst, memadr.madr);
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Error: unsupported MMX operand - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                    }
+                }
+                else if (ud_obj.operand[0].type == UD_OP_MEM &&
+                         ud_obj.operand[1].type == UD_OP_REG &&
+                         ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                {
+                    SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                    OUTPUT_PARAMSTRING("call x86_mmx_movq_store $, %i, %s\n", ud_obj.operand[1].base - UD_R_MM0, memadr.madr);
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Imovd:
+            {
+                /* no flags affected */
+
+                if (ud_obj.operand[0].type == UD_OP_REG &&
+                    ud_obj.operand[0].base >= UD_R_MM0 && ud_obj.operand[0].base <= UD_R_MM7)
+                {
+                    int mmxdst = ud_obj.operand[0].base - UD_R_MM0;
+
+                    if (ud_obj.operand[1].type == UD_OP_REG &&
+                        ud_obj.operand[1].base >= UD_R_EAX && ud_obj.operand[1].base <= UD_R_EDI)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_movd_in $, %i, %s\n", mmxdst, X86REGSTR(ud_obj.operand[1].base));
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                        OUTPUT_PARAMSTRING("call x86_mmx_movd_load $, %i, %s\n", mmxdst, memadr.madr);
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Error: unsupported MMX operand - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                    }
+                }
+                else if (ud_obj.operand[1].type == UD_OP_REG &&
+                         ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                {
+                    int mmxsrc = ud_obj.operand[1].base - UD_R_MM0;
+
+                    if (ud_obj.operand[0].type == UD_OP_REG &&
+                        ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_movd_out $, %i\n", mmxsrc);
+                        OUTPUT_PARAMSTRING("mov %s, tmp0\n", X86REGSTR(ud_obj.operand[0].base));
+                    }
+                    else if (ud_obj.operand[0].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                        OUTPUT_PARAMSTRING("call x86_mmx_movd_store $, %i, %s\n", mmxsrc, memadr.madr);
+                    }
+                    else
+                    {
+                        fprintf(stderr, "Error: unsupported MMX operand - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Ipshufw:
+            {
+                /* no flags affected: pshufw mm, mm/m64, imm8 */
+
+                if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[2].type == UD_OP_IMM)
+                {
+                    unsigned int mmximm = SR_disassemble_get_value(&(ud_obj.operand[2]), ZERO_EXTEND) & 0xff;
+
+                    if (ud_obj.operand[1].type == UD_OP_REG)
+                    {
+                        OUTPUT_PARAMSTRING("call x86_mmx_pshufw_rr $, %i, %i, %u\n", ud_obj.operand[0].base - UD_R_MM0, ud_obj.operand[1].base - UD_R_MM0, mmximm);
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_REG, ZERO_EXTEND, &memadr);
+
+                        OUTPUT_PARAMSTRING("call x86_mmx_pshufw_rm $, %i, %s, %u\n", ud_obj.operand[0].base - UD_R_MM0, memadr.madr, mmximm);
+                    }
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Ipextrw:
+            {
+                /* no flags affected: pextrw r32, mm, imm8 */
+
+                if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI &&
+                    ud_obj.operand[1].type == UD_OP_REG && ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7 &&
+                    ud_obj.operand[2].type == UD_OP_IMM)
+                {
+                    OUTPUT_PARAMSTRING("call x86_mmx_pextrw $, %i, %u\n", ud_obj.operand[1].base - UD_R_MM0, (unsigned int)(SR_disassemble_get_value(&(ud_obj.operand[2]), ZERO_EXTEND) & 0xff));
+                    OUTPUT_PARAMSTRING("mov %s, tmp0\n", X86REGSTR(ud_obj.operand[0].base));
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Ipinsrw:
+            {
+                /* no flags affected: pinsrw mm, r32, imm8 */
+
+                if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base >= UD_R_MM0 && ud_obj.operand[0].base <= UD_R_MM7 &&
+                    ud_obj.operand[1].type == UD_OP_REG && ud_obj.operand[1].base >= UD_R_EAX && ud_obj.operand[1].base <= UD_R_EDI &&
+                    ud_obj.operand[2].type == UD_OP_IMM)
+                {
+                    OUTPUT_PARAMSTRING("call x86_mmx_pinsrw $, %i, %s, %u\n", ud_obj.operand[0].base - UD_R_MM0, X86REGSTR(ud_obj.operand[1].base), (unsigned int)(SR_disassemble_get_value(&(ud_obj.operand[2]), ZERO_EXTEND) & 0xff));
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Ipmovmskb:
+            {
+                /* no flags affected: pmovmskb r32, mm */
+
+                if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI &&
+                    ud_obj.operand[1].type == UD_OP_REG && ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                {
+                    OUTPUT_PARAMSTRING("call x86_mmx_pmovmskb $, %i\n", ud_obj.operand[1].base - UD_R_MM0);
+                    OUTPUT_PARAMSTRING("mov %s, tmp0\n", X86REGSTR(ud_obj.operand[0].base));
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Imaskmovq:
+            {
+                /* no flags affected: maskmovq mm, mm stores to [edi] */
+
+                if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base >= UD_R_MM0 && ud_obj.operand[0].base <= UD_R_MM7 &&
+                    ud_obj.operand[1].type == UD_OP_REG && ud_obj.operand[1].base >= UD_R_MM0 && ud_obj.operand[1].base <= UD_R_MM7)
+                {
+                    OUTPUT_PARAMSTRING("call x86_mmx_maskmovq $, %i, %i, edi\n", ud_obj.operand[0].base - UD_R_MM0, ud_obj.operand[1].base - UD_R_MM0);
+                }
+                else
+                {
+                    fprintf(stderr, "Error: unsupported MMX operands - %i - %i - %s\n", Entry, (unsigned int)cur_ofs, output->str);
+                }
+            }
+            break;
+        case UD_Iemms:
+            {
+                /* no flags affected: the MMX registers are not shared with the x87 stack */
+
+                OUTPUT_STRING("NOP\n");
+            }
+            break;
         case UD_Icpuid:
             {
                 /* no flags affected */
