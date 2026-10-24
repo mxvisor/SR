@@ -1181,6 +1181,46 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
                     break;
                 }
 
+                // push fs:[const]
+                if (ud_obj.mnemonic == UD_Ipush &&
+                    ud_obj.operand[0].type == UD_OP_MEM &&
+                    ud_obj.operand[0].base == UD_NONE &&
+                    ud_obj.operand[0].index == UD_NONE &&
+                    ud_obj.operand[0].size == 32 &&
+                    fixup == NULL &&
+                    ud_obj.pfx_seg == UD_R_FS
+                   )
+                {
+                    sprintf(cResult, "push dword 0x%x\ncall x86_read_fs_dword", ud_obj.operand[0].lval.udword);
+
+                    output->str = strdup(cResult);
+
+#ifdef DISPLAY_DISASSEMBLY
+                    printf("\t%s\n", output->str);
+#endif
+                    break;
+                }
+
+                // pop fs:[const]
+                if (ud_obj.mnemonic == UD_Ipop &&
+                    ud_obj.operand[0].type == UD_OP_MEM &&
+                    ud_obj.operand[0].base == UD_NONE &&
+                    ud_obj.operand[0].index == UD_NONE &&
+                    ud_obj.operand[0].size == 32 &&
+                    fixup == NULL &&
+                    ud_obj.pfx_seg == UD_R_FS
+                   )
+                {
+                    sprintf(cResult, "push dword 0x%x\ncall x86_write_fs_dword", ud_obj.operand[0].lval.udword);
+
+                    output->str = strdup(cResult);
+
+#ifdef DISPLAY_DISASSEMBLY
+                    printf("\t%s\n", output->str);
+#endif
+                    break;
+                }
+
                 // mov fs:[const], reg
                 if (ud_obj.mnemonic == UD_Imov &&
                     ud_obj.operand[1].type == UD_OP_REG &&
