@@ -1143,7 +1143,7 @@ int SRW_LoadFile(const char *fname)
                             case   3: ProcName = "ws2_32.closesocket"; break;
                             case   4: ProcName = "ws2_32.connect"; break;
                             case   6: ProcName = "ws2_32.getsockname"; break;
-                            case   7: ProcName = "getsockopt"; break;
+                            case   7: ProcName = "ws2_32.getsockopt"; break;
                             case   8: ProcName = "ws2_32.htonl"; break;
                             case   9: ProcName = "ws2_32.htons"; break;
                             case  10: ProcName = "ws2_32.inet_addr"; break;
@@ -1152,12 +1152,12 @@ int SRW_LoadFile(const char *fname)
                             case  13: ProcName = "ws2_32.listen"; break;
                             case  14: ProcName = "ws2_32.ntohl"; break;
                             case  15: ProcName = "ws2_32.ntohs"; break;
-                            case  16: ProcName = "recv"; break;
-                            case  17: ProcName = "recvfrom"; break;
+                            case  16: ProcName = "ws2_32.recv"; break;
+                            case  17: ProcName = "ws2_32.recvfrom"; break;
                             case  18: ProcName = "ws2_32.select"; break;
                             case  19: ProcName = "ws2_32.send"; break;
                             case  20: ProcName = "ws2_32.sendto"; break;
-                            case  21: ProcName = "setsockopt"; break;
+                            case  21: ProcName = "ws2_32.setsockopt"; break;
                             case  22: ProcName = "ws2_32.shutdown"; break;
                             case  23: ProcName = "ws2_32.socket"; break;
                             case  52: ProcName = "ws2_32.gethostbyname"; break;
