@@ -1162,6 +1162,7 @@ int SRW_LoadFile(const char *fname)
                             case  23: ProcName = "ws2_32.socket"; break;
                             case  52: ProcName = "ws2_32.gethostbyname"; break;
                             case  57: ProcName = "ws2_32.gethostname"; break;
+                            case 151: ProcName = "ws2_32.__WSAFDIsSet"; break;
                             case 111: ProcName = "ws2_32.WSAGetLastError"; break;
                             case 115: ProcName = "ws2_32.WSAStartup"; break;
                             case 116: ProcName = "ws2_32.WSACleanup"; break;
