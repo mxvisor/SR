@@ -122,7 +122,31 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
                 strcpy(&(newstr[1]), output->str);
                 free(output->str);
                 output->str = newstr;
+
+                if (last_instruction > 0)
+                {
+                    // the commented out instruction ends the region: control flows on to the next one
+                    char cLabel[32], *tail;
+                    size_t used = strlen(output->str);
+                    output_data *next_output = section_output_list_FindEntryEqual(Entry, cur_ofs + output->len + 1);
+
+                    if (next_output != NULL) next_output->has_label = 1;
+                    SR_get_label(cLabel, section[Entry].start + cur_ofs + output->len + 1);
+
+                    tail = (char *) realloc(output->str, used + strlen(cLabel) + 16);
+                    if (tail == NULL)
+                    {
+                        fprintf(stderr, "Error: not enough memory - %i - %i (0x%x)\n", Entry, (unsigned int)cur_ofs, (unsigned int)(section[Entry].start + cur_ofs));
+
+                        return 3;
+                    }
+
+                    sprintf(tail + used, "\ntcall %s\nendp\n", cLabel);
+                    output->str = tail;
+                }
             }
+
+            last_instruction = 0;
         }
         else
         {
