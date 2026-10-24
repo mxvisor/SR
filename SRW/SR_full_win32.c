@@ -58,10 +58,12 @@ int SR_disassemble_remove_segment(const char *ostr, char *dst, uint8_t pfx_seg)
             break;
         case UD_R_FS:
             seg = "fs:";
+            fprintf(stderr, "Error: unsupported fs: prefix - 0x%x - %s\n", (unsigned int) ud_insn_off(&ud_obj), ostr);
             return -101;
             break;
         case UD_R_GS:
             seg = "gs:";
+            fprintf(stderr, "Error: unsupported gs: prefix - 0x%x - %s\n", (unsigned int) ud_insn_off(&ud_obj), ostr);
             return -102;
             break;
         default:
