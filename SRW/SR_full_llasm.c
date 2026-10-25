@@ -40,6 +40,15 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
     int *ua_ebp_area_value, *ua_esp_area_value;
     Word_t ua_ebp_area_index, ua_esp_area_index;
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+    // the target of a computed jump by an address of the original program is a procedure
+    if (SR_is_guest_address_target((uint32_t)(section[Entry].start + region->begin_ofs)))
+    {
+        output = section_output_list_FindEntryEqual(Entry, region->begin_ofs);
+        if (output != NULL) output->has_label = 1;
+    }
+#endif
+
     cur_ofs = region->end_ofs;
     finished = 0;
     last_instruction = 2;

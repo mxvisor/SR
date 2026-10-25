@@ -80,6 +80,9 @@ void SR_get_label(char *cbuf, uint_fast32_t Address);
 int SRW_LoadFile(const char *fname);
 
 int SR_LoadSCI(void);
+int SR_is_guest_address_jump(uint32_t address);
+int SR_is_guest_address_base(uint32_t address);
+int SR_is_guest_address_target(uint32_t address);
 
 int SR_initial_disassembly(void);
 int SR_apply_fixup_info(void);

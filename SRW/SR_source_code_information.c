@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "SR_defs.h"
+#include <stdlib.h>
 #include "SR_vars.h"
 
 static int SR_LoadSCI_fixup_interpret_as_code(FILE *file)
@@ -51,6 +52,7 @@ static int SR_LoadSCI_fixup_interpret_as_code(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X", &address);
 
@@ -87,6 +89,7 @@ static int SR_LoadSCI_code_sections(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         for (index = 0; index < num_sections; index++)
         {
@@ -125,6 +128,7 @@ static int SR_LoadSCI_displaced_labels(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X,%i", &address, &displacement);
 
@@ -165,6 +169,7 @@ static int SR_LoadSCI_noret_procedures(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X", &address);
 
@@ -202,6 +207,7 @@ static int SR_LoadSCI_code16_areas(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X,%i", &address, &arealength);
 
@@ -242,6 +248,7 @@ static int SR_LoadSCI_fixup_do_not_interpret_as_code(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X", &address);
 
@@ -281,6 +288,7 @@ static int SR_LoadSCI_external_procedures(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         str1 = strchr(buf, ',');
 
@@ -336,6 +344,7 @@ static int SR_LoadSCI_global_aliases(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         str1 = strchr(buf, ',');
 
@@ -380,6 +389,7 @@ static int SR_LoadSCI_ignored_areas(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X,%i", &address, &arealength);
 
@@ -422,6 +432,7 @@ static int SR_LoadSCI_instruction_replacements(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         str1 = strchr(buf, ',');
 
@@ -497,6 +508,7 @@ static int SR_LoadSCI_unaligned_ebp_areas(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X,%i", &address, &arealength);
 
@@ -538,6 +550,7 @@ static int SR_LoadSCI_unaligned_esp_areas(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         sscanf(buf, "loc_%X,%i", &address, &arealength);
 
@@ -581,6 +594,7 @@ static int SR_LoadSCI_instruction_flags(FILE *file)
         }
 
         if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
 
         str1 = strchr(buf, ',');
 
@@ -616,10 +630,187 @@ static int SR_LoadSCI_instruction_flags(FILE *file)
 }
 #endif
 
+/* code_entry_points.sci: addresses of procedures that are called through a
+ * pointer (a callback, a list of effects), so that no call leads to them and
+ * SR would not know that they hold code */
+static int SR_LoadSCI_code_entry_points(FILE *file)
+{
+    char buf[8192];
+    size_t length;
+    int items;
+    unsigned int address;
+
+    while (!feof(file))
+    {
+        // read enters
+        items = fscanf(file, "%8191[\n]", buf);
+        // read line
+        buf[0] = 0;
+        items = fscanf(file, "%8191[^\n]", buf);
+        if (items <= 0) continue;
+        length = strlen(buf);
+        if (length != 0 && buf[length - 1] == '\r')
+        {
+            length--;
+            buf[length] = 0;
+        }
+
+        if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
+
+        sscanf(buf, "loc_%X", &address);
+
+        {
+            uint_fast32_t SecNum, RelAdr;
+
+            if (SR_get_section_reladr(address, &SecNum, &RelAdr))
+            {
+                SR_disassemble_add_address((unsigned int)SecNum,
+                                           (uint32_t)(section[SecNum].start + RelAdr));
+            }
+        }
+    }
+
+    return 0;
+}
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+// addresses of the "jmp reg" instructions whose register holds an address of the guest's code
+// (not an encoded host offset): they go through x86_resolve_guest_code
+// "base loc_X": a fixup of a table of code addresses (or of the base of computed jump targets)
+// that is used as a number of the original program, not as a label
+static uint32_t *guest_address_jumps = NULL, *guest_address_bases = NULL;
+static size_t guest_address_jumps_count = 0, guest_address_jumps_alloc = 0;
+static size_t guest_address_bases_count = 0, guest_address_bases_alloc = 0;
+// "target loc_X": a code address reached by a computed jump: it is an entry point with a label
+static uint32_t *guest_address_targets = NULL;
+static size_t guest_address_targets_count = 0, guest_address_targets_alloc = 0;
+
+int SR_is_guest_address_jump(uint32_t address)
+{
+    size_t index;
+
+    for (index = 0; index < guest_address_jumps_count; index++)
+    {
+        if (guest_address_jumps[index] == address) return 1;
+    }
+
+    return 0;
+}
+
+int SR_is_guest_address_target(uint32_t address)
+{
+    size_t index;
+
+    for (index = 0; index < guest_address_targets_count; index++)
+    {
+        if (guest_address_targets[index] == address) return 1;
+    }
+
+    return 0;
+}
+
+int SR_is_guest_address_base(uint32_t address)
+{
+    size_t index;
+
+    for (index = 0; index < guest_address_bases_count; index++)
+    {
+        if (guest_address_bases[index] == address) return 1;
+    }
+
+    return 0;
+}
+
+static int SR_LoadSCI_guest_address_jumps(FILE *file)
+{
+    char buf[8192];
+    size_t length;
+    int items;
+    unsigned int address;
+
+    while (!feof(file))
+    {
+        // read enters
+        items = fscanf(file, "%8191[\n]", buf);
+        // read line
+        buf[0] = 0;
+        items = fscanf(file, "%8191[^\n]", buf);
+        if (items <= 0) continue;
+        length = strlen(buf);
+        if (length != 0 && buf[length - 1] == '\r')
+        {
+            length--;
+            buf[length] = 0;
+        }
+
+        if (length == 0) continue;
+        if (buf[0] == ';' || buf[0] == '#') continue;
+
+        if (strncmp(buf, "target ", 7) == 0)
+        {
+            uint_fast32_t SecNum, RelAdr;
+
+            if (sscanf(buf + 7, "loc_%X", &address) != 1) continue;
+
+            if (guest_address_targets_count == guest_address_targets_alloc)
+            {
+                uint32_t *list;
+
+                guest_address_targets_alloc = guest_address_targets_alloc ? guest_address_targets_alloc * 2 : 64;
+                list = (uint32_t *)realloc(guest_address_targets, guest_address_targets_alloc * sizeof(uint32_t));
+                if (list == NULL) return 1;
+                guest_address_targets = list;
+            }
+            guest_address_targets[guest_address_targets_count++] = address;
+
+            if (SR_get_section_reladr(address, &SecNum, &RelAdr))
+            {
+                SR_disassemble_add_address((unsigned int)SecNum, (uint32_t)(section[SecNum].start + RelAdr));
+            }
+            continue;
+        }
+
+        if (strncmp(buf, "base ", 5) == 0)
+        {
+            if (sscanf(buf + 5, "loc_%X", &address) != 1) continue;
+
+            if (guest_address_bases_count == guest_address_bases_alloc)
+            {
+                uint32_t *list;
+
+                guest_address_bases_alloc = guest_address_bases_alloc ? guest_address_bases_alloc * 2 : 16;
+                list = (uint32_t *)realloc(guest_address_bases, guest_address_bases_alloc * sizeof(uint32_t));
+                if (list == NULL) return 1;
+                guest_address_bases = list;
+            }
+            guest_address_bases[guest_address_bases_count++] = address;
+            continue;
+        }
+
+        if (sscanf(buf, "loc_%X", &address) != 1) continue;
+
+        if (guest_address_jumps_count == guest_address_jumps_alloc)
+        {
+            uint32_t *list;
+
+            guest_address_jumps_alloc = guest_address_jumps_alloc ? guest_address_jumps_alloc * 2 : 64;
+            list = (uint32_t *)realloc(guest_address_jumps, guest_address_jumps_alloc * sizeof(uint32_t));
+            if (list == NULL) return 1;
+            guest_address_jumps = list;
+        }
+        guest_address_jumps[guest_address_jumps_count++] = address;
+    }
+
+    return 0;
+}
+#endif
+
 int SR_LoadSCI(void)
 {
     const static char fixup_interpret_as_code[] = "fixup_interpret_as_code.sci";
     const static char code_sections[] = "code_sections.sci";
+    const static char code_entry_points[] = "code_entry_points.sci";
     const static char displaced_labels[] = "displaced_labels.sci";
     const static char noret_procedures[] = "noret_procedures.sci";
     const static char code16_areas[] = "code16_areas.sci";
@@ -635,6 +826,9 @@ int SR_LoadSCI(void)
     const static char unaligned_esp_areas[] = "unaligned_esp_areas.sci";
 #endif
     const static char instruction_flags[] = "instruction_flags.sci";
+#if (OUTPUT_TYPE == OUT_LLASM)
+    const static char guest_address_jumps_sci[] = "guest_address_jumps.sci";
+#endif
 #endif
     FILE *f;
     int ret;
@@ -665,6 +859,33 @@ int SR_LoadSCI(void)
         if (ret) return ret;
     }
 
+
+    f = fopen(code_entry_points, "rt");
+    if (f != NULL)
+    {
+        fprintf(stderr, "\tLoading %s...\n", code_entry_points);
+
+        ret = SR_LoadSCI_code_entry_points(f);
+
+        fclose(f);
+
+        if (ret) return ret;
+    }
+
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+    f = fopen(guest_address_jumps_sci, "rt");
+    if (f != NULL)
+    {
+        fprintf(stderr, "\tLoading %s...\n", guest_address_jumps_sci);
+
+        ret = SR_LoadSCI_guest_address_jumps(f);
+
+        fclose(f);
+
+        if (ret) return ret;
+    }
+#endif
 
     f = fopen(displaced_labels, "rt");
     if (f != NULL)

@@ -118,6 +118,8 @@ int init_udis86_dep(void)
 	SET_FLAGS(UD_Ibswap, FL_NONE, FL_NONE);
 	SET_FLAGS(UD_Ibt, FL_NONE, FL_CARRY);
 	SET_FLAGS(UD_Ibts, FL_NONE, FL_CARRY);
+	SET_FLAGS(UD_Ibtr, FL_NONE, FL_CARRY);
+	SET_FLAGS(UD_Ibtc, FL_NONE, FL_CARRY);
 
 	/* C */
 	SET_FLAGS(UD_Icall, FL_NONE, FL_NONE);
@@ -251,6 +253,7 @@ int init_udis86_dep(void)
 	SET_FLAGS(UD_Ilodsw, /* FL_DIRECTION */ FL_NONE, FL_NONE);
 	SET_FLAGS(UD_Iloop, FL_NONE, FL_NONE);
 	SET_FLAGS(UD_Iloope, FL_ZERO, FL_NONE);
+	SET_FLAGS(UD_Iloopne, FL_ZERO, FL_NONE);
 	//SET_FLAGS(UD_Iloopnz, FL_ZERO, FL_NONE);
 	SET_FLAGS(UD_Ilss, FL_NONE, FL_NONE);
 

@@ -1106,6 +1106,7 @@ int SR_disassemble_offset_win32(unsigned int Entry, uint_fast32_t offset)
                 break;
             case UD_Iinvalid:
                 printf("decoded length: %i\n", decoded_length);
+                fprintf(stderr, "Error: invalid instruction - %i - %i (0x%x)\n", Entry, (unsigned int)offset, (unsigned int)(section[Entry].start + offset));
                 return 3;
                 break;
 
