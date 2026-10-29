@@ -2440,6 +2440,63 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ibsf:
+            {
+                /* CF,OF,AF,SF,PF undefined, ZF - modified */
+
+                if (ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI)
+                {
+                    if (ud_obj.operand[1].type == UD_OP_REG)
+                    {
+                        if (flags_to_write & FL_ZERO)
+                        {
+                            SR_disassemble_change_flags(pOutput, flags_to_write, 0, 0);
+                        }
+
+                        OUTPUT_PARAMSTRING("sub tmp1, 0, %s\n", X86REGSTR(ud_obj.operand[1].base));
+                        OUTPUT_PARAMSTRING("and tmp1, tmp1, %s\n", X86REGSTR(ud_obj.operand[1].base));
+                        OUTPUT_STRING("ctlz tmp1, tmp1\n");
+                        OUTPUT_PARAMSTRING("sub %s, 31, tmp1\n", X86REGSTR(ud_obj.operand[0].base));
+
+                        if (flags_to_write & FL_ZERO)
+                        {
+                            OUTPUT_STRING("and tmp2, tmp1, 0x20\n");
+                            OUTPUT_STRING("shl tmp2, tmp2, ZF_SHIFT - 5\n");
+                            OUTPUT_STRING("or eflags, eflags, tmp2\n");
+                        }
+                    }
+                    else if (ud_obj.operand[1].type == UD_OP_MEM && ud_obj.operand[1].size == 32)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_READ, ZERO_EXTEND, &memadr);
+                        SR_disassemble_read_mem_word(cOutput, &memadr, LR_TMP1);
+
+                        if (flags_to_write & FL_ZERO)
+                        {
+                            SR_disassemble_change_flags(pOutput, flags_to_write, 0, 0);
+                        }
+
+                        OUTPUT_STRING("sub tmp2, 0, tmp1\n");
+                        OUTPUT_STRING("and tmp2, tmp2, tmp1\n");
+                        OUTPUT_STRING("ctlz tmp2, tmp2\n");
+                        OUTPUT_PARAMSTRING("sub %s, 31, tmp2\n", X86REGSTR(ud_obj.operand[0].base));
+
+                        if (flags_to_write & FL_ZERO)
+                        {
+                            OUTPUT_STRING("and tmp3, tmp2, 0x20\n");
+                            OUTPUT_STRING("shl tmp3, tmp3, ZF_SHIFT - 5\n");
+                            OUTPUT_STRING("or eflags, eflags, tmp3\n");
+                        }
+                    }
+                }
+            }
+            break;
+        case UD_Irdtsc:
+            {
+                /* no flags affected */
+
+                OUTPUT_STRING("call x86_rdtsc $\n");
+            }
+            break;
         case UD_Ibswap:
             {
                 /* no flags affected */
@@ -6216,6 +6273,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6268,6 +6326,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6320,6 +6379,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6372,6 +6432,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6427,6 +6488,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6462,6 +6524,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {
@@ -6529,6 +6592,7 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             if (value == 0)
                             {
                                 flags_write = 0;
+                                OUTPUT_STRING("; shift by 0: no operation\n");
                             }
                             else
                             {

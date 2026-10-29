@@ -28,6 +28,7 @@
  *  touched: a program does not mix the two between emms instructions.
  */
 
+#include <math.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -46,7 +47,10 @@
     X(PUNPCKLBW) X(PUNPCKLWD) X(PUNPCKLDQ) X(PUNPCKHBW) X(PUNPCKHWD) X(PUNPCKHDQ) \
     X(PSLLW) X(PSLLD) X(PSLLQ) X(PSRLW) X(PSRLD) X(PSRLQ) X(PSRAW) X(PSRAD) \
     X(PAVGB) X(PAVGW) X(PMAXUB) X(PMAXSW) X(PMINUB) X(PMINSW) X(PSADBW) \
-    X(MOVQ)
+    X(MOVQ) \
+    X(PFADD) X(PFSUB) X(PFMUL) X(PFMAX) X(PFMIN) \
+    X(PFRCP) X(PFRSQRT) X(PF2ID) X(PI2FD) \
+    X(PFACC) X(PFCMPGE) X(PFCMPGT) X(PFRCPIT1) X(PFRCPIT2)
 
 enum {
 #define X(name) MMX_##name,
@@ -71,6 +75,31 @@ static int32_t clamp(int32_t v, int32_t lo, int32_t hi)
 #define MAP8(f)  do { uint64_t r_ = 0; int i_; for (i_ = 0; i_ < 8; i_++) r_ |= (uint64_t)(uint8_t)(f) << (8 * i_); return r_; } while (0)
 #define MAP16(f) do { uint64_t r_ = 0; int i_; for (i_ = 0; i_ < 4; i_++) r_ |= (uint64_t)(uint16_t)(f) << (16 * i_); return r_; } while (0)
 #define MAP32(f) do { uint64_t r_ = 0; int i_; for (i_ = 0; i_ < 2; i_++) r_ |= (uint64_t)(uint32_t)(f) << (32 * i_); return r_; } while (0)
+
+static uint64_t f32_pair(float lo, float hi)
+{
+    uint32_t a, b;
+
+    memcpy(&a, &lo, 4);
+    memcpy(&b, &hi, 4);
+    return (uint64_t)a | ((uint64_t)b << 32);
+}
+
+static float f32_lane(uint64_t v, int i)
+{
+    uint32_t x = (uint32_t)(v >> (32 * i));
+    float f;
+
+    memcpy(&f, &x, 4);
+    return f;
+}
+
+#define PF_BINARY(f) f32_pair((f)(f32_lane(d, 0), f32_lane(s, 0)), (f)(f32_lane(d, 1), f32_lane(s, 1)))
+static float pf_add(float a, float b) { return a + b; }
+static float pf_sub(float a, float b) { return a - b; }
+static float pf_mul(float a, float b) { return a * b; }
+static float pf_max(float a, float b) { return (a > b) ? a : b; }
+static float pf_min(float a, float b) { return (a < b) ? a : b; }
 
 static uint64_t mmx_op(uint32_t op, uint64_t d, uint64_t s)
 {
@@ -161,6 +190,23 @@ static uint64_t mmx_op(uint32_t op, uint64_t d, uint64_t s)
             return sum;
         }
     case MMX_MOVQ:    return s;
+    case MMX_PFADD:   return PF_BINARY(pf_add);
+    case MMX_PFSUB:   return PF_BINARY(pf_sub);
+    case MMX_PFMUL:   return PF_BINARY(pf_mul);
+    case MMX_PFMAX:   return PF_BINARY(pf_max);
+    case MMX_PFMIN:   return PF_BINARY(pf_min);
+    case MMX_PFRCP:   return f32_pair(1.0f / f32_lane(s, 0), 1.0f / f32_lane(s, 1));
+    case MMX_PFRSQRT: return f32_pair(1.0f / sqrtf(f32_lane(s, 0)), 1.0f / sqrtf(f32_lane(s, 1)));
+    case MMX_PF2ID:   return (uint64_t)(uint32_t)(int32_t)f32_lane(s, 0) | ((uint64_t)(uint32_t)(int32_t)f32_lane(s, 1) << 32);
+    case MMX_PI2FD:   return f32_pair((float)S32(s, 0), (float)S32(s, 1));
+    case MMX_PFACC:   return f32_pair(f32_lane(d, 0) + f32_lane(d, 1), f32_lane(s, 0) + f32_lane(s, 1));
+    case MMX_PFCMPGE: return (uint64_t)((f32_lane(d, 0) >= f32_lane(s, 0)) ? 0xffffffffu : 0) |
+                             ((uint64_t)((f32_lane(d, 1) >= f32_lane(s, 1)) ? 0xffffffffu : 0) << 32);
+    case MMX_PFCMPGT: return (uint64_t)((f32_lane(d, 0) > f32_lane(s, 0)) ? 0xffffffffu : 0) |
+                             ((uint64_t)((f32_lane(d, 1) > f32_lane(s, 1)) ? 0xffffffffu : 0) << 32);
+    case MMX_PFRCPIT1:
+    case MMX_PFRCPIT2: return f32_pair(f32_lane(d, 0) * (2.0f - f32_lane(s, 0) * f32_lane(d, 0)),
+                                       f32_lane(d, 1) * (2.0f - f32_lane(s, 1) * f32_lane(d, 1)));
     }
 
     return d;

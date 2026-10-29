@@ -26,6 +26,8 @@
 
 #include "llasm_cpu.h"
 
+#include <time.h>
+
 #if defined(_MSC_VER)
 #include <intrin.h>
 #elif defined(__i386__) || defined(__x86_64__)
@@ -84,4 +86,24 @@ EXTERNC void CCALL x86_cpuid(CPU)
         ebx = b;
         ecx = c;
         edx = d;
+}
+
+EXTERNC void CCALL x86_rdtsc(CPU)
+{
+        uint64_t t;
+
+#if defined(_MSC_VER)
+        t = __rdtsc();
+#elif defined(__i386__) || defined(__x86_64__)
+        uint32_t lo, hi;
+        __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+        t = ((uint64_t)hi << 32) | lo;
+#else
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        t = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+#endif
+
+        eax = (uint32_t)t;
+        edx = (uint32_t)(t >> 32);
 }

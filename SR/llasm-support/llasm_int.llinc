@@ -24,6 +24,7 @@
 
 funcv x86_int $, intno
 funcv x86_cpuid $
+funcv x86_rdtsc $
 
 macro INT intno
     call x86_int $, \intno

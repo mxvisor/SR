@@ -74,3 +74,17 @@ define MMX_PMINUB 52
 define MMX_PMINSW 53
 define MMX_PSADBW 54
 define MMX_MOVQ 55
+define MMX_PFADD 56
+define MMX_PFSUB 57
+define MMX_PFMUL 58
+define MMX_PFMAX 59
+define MMX_PFMIN 60
+define MMX_PFRCP 61
+define MMX_PFRSQRT 62
+define MMX_PF2ID 63
+define MMX_PI2FD 64
+define MMX_PFACC 65
+define MMX_PFCMPGE 66
+define MMX_PFCMPGT 67
+define MMX_PFRCPIT1 68
+define MMX_PFRCPIT2 69
