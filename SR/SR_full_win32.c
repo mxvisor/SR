@@ -69,7 +69,7 @@ int SR_disassemble_remove_segment(const char *ostr, char *dst, uint8_t pfx_seg)
 
     if (seg != NULL)
     {
-        str1 = strstr(ostr, seg);
+        str1 = (char *)strstr(ostr, seg);
     }
     else
     {
@@ -107,8 +107,8 @@ int SR_disassemble_remove_segreg2(const char *ostr, char *dst, const struct ud_o
     const char *str1, *str2;
     intptr_t length1, length2;
 
-    str1 = strchr(ostr, ' ');
-    str2 = strchr(ostr, ',');
+    str1 = (char *)strchr(ostr, ' ');
+    str2 = (char *)strchr(ostr, ',');
 
     if (str1 == NULL || str2 == NULL)
     {
@@ -143,7 +143,7 @@ int SR_disassemble_convert_farcall(const char *ostr, char *dst)
     const char *str1, *str2;
     intptr_t length1;
 
-    str1 = strstr(ostr, " far ");
+    str1 = (char *)strstr(ostr, " far ");
 
     if (str1 == NULL)
     {

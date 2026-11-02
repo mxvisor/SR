@@ -66,7 +66,7 @@ static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fi
 
 
     // find substring (must be exactly one occurence)
-    str1 = strstr(ostr, cAdr);
+    str1 = (char *)strstr(ostr, cAdr);
     if (str1 == NULL) return 0;
 
     str2 = str1 + strlen(cAdr);

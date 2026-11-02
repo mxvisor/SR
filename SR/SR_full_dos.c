@@ -90,7 +90,7 @@ int SR_disassemble_convert_cjump(char *dst, const char *modifier, uint_fast32_t 
 
     ostr = ud_insn_asm(&ud_obj);
 
-    str1 = strchr(ostr, ' ');
+    str1 = (char *)strchr(ostr, ' ');
     if (str1 == NULL)
     {
         fprintf(stderr, "Error: error converting cjump: %i\n", 2);
@@ -144,7 +144,7 @@ int SR_disassemble_convert_fixup(const char *ostr, char *dst, fixup_data *fixup,
     }
 
     // find substring (must be exactly one occurence)
-    str1 = strstr(ostr, cbuf);
+    str1 = (char *)strstr(ostr, cbuf);
     if (str1 == NULL)
     {
         fprintf(stderr, "Error: error converting fixup: %i - %s - %s (%i: 0x%x)\n", 1, ostr, cbuf, Entry, (unsigned int)offset);

@@ -223,7 +223,7 @@ static int SR_disassemble_fixup_operand(unsigned int Entry, const char *ostr, fi
 
 
     // find substring (must be exactly one occurence)
-    str1 = strstr(ostr, cAdr);
+    str1 = (char *)strstr(ostr, cAdr);
     if (str1 == NULL) return 0;
 
     str2 = str1 + strlen(cAdr);
@@ -1730,7 +1730,14 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
     }
 
     cOutput[0] = 0;
+#if defined(__GNUC__) && (__GNUC__ >= 12)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
     pOutput = &(cOutput[0]);
+#if defined(__GNUC__) && (__GNUC__ >= 12)
+#pragma GCC diagnostic pop
+#endif
 
 #define OUTPUT_PARAMSTRING(x, ...) sprintf(cOutPart, x, __VA_ARGS__); strcat(cOutput, cOutPart);
 #define OUTPUT_STRING(x) strcat(cOutput, x)
