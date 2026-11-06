@@ -79,7 +79,7 @@
 #else
 # if defined(__APPLE__)
 #  define FMT64 "ll"
-# elif defined(__amd64__) || defined(__x86_64__)
+# elif defined(__amd64__) || defined(__x86_64__) || defined(__LP64__)
 #  define FMT64 "l"
 # else
 #  define FMT64 "ll"
