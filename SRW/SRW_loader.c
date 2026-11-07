@@ -1120,9 +1120,14 @@ int SRW_LoadFile(const char *fname)
                     // would be a symbol the port cannot implement.
                     ProcName = NULL;
 
-                    if (((*LookupTable & 0xffff) == 17) && (strcasecmp(DllName, "comctl32.dll") == 0))
+                    if (strcasecmp(DllName, "comctl32.dll") == 0)
                     {
-                        ProcName = "InitCommonControls";
+                        switch(*LookupTable & 0xffff)
+                        {
+                            case  5: ProcName = "DrawStatusTextA"; break;
+                            case  6: ProcName = "CreateStatusWindowA"; break;
+                            case 17: ProcName = "InitCommonControls"; break;
+                        }
                     }
 
                     if (strcasecmp(DllName, "dsound.dll") == 0)
