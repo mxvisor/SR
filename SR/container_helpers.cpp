@@ -462,11 +462,13 @@ alias_data *section_alias_list_Insert(unsigned int SecNum, Word_t Index, const c
 {
     alias_data *alias, **alias_value;
 
-    alias = static_cast<alias_data *>(malloc(sizeof(alias_data) + strlen(proc)));
+    /* global_prefix of SR.cfg goes before every alias: they are the global names */
+    alias = static_cast<alias_data *>(malloc(sizeof(alias_data) + strlen(global_prefix) + strlen(proc)));
     if (alias == nullptr) return nullptr;
 
     alias->ofs = static_cast<uint_fast32_t>(Index);
-    strcpy(alias->proc, proc);
+    strcpy(alias->proc, global_prefix);
+    strcat(alias->proc, proc);
 
     alias_value = reinterpret_cast<alias_data **>(OMap_Ins(&section[SecNum].alias_list, Index));
     if (alias_value == nullptr)

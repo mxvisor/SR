@@ -107,3 +107,69 @@ EXTERNC void CCALL x86_out_dx_eax(CPU)
     X86_OutPortProcedure(edx & 0xffff, 4, eax);
 }
 
+EXTERNC void CCALL x86_outsb(CPU)
+{
+    X86_OutPortProcedure(edx & 0xffff, 1, *((uint8_t *)REG2PTR(esi)));
+    esi += (eflags & DF)?-1:1;
+}
+
+EXTERNC void CCALL x86_outsw(CPU)
+{
+    X86_OutPortProcedure(edx & 0xffff, 2, *((uint16_t *)REG2PTR(esi)));
+    esi += (eflags & DF)?-2:2;
+}
+
+EXTERNC void CCALL x86_outsd(CPU)
+{
+    X86_OutPortProcedure(edx & 0xffff, 4, *((uint32_t *)REG2PTR(esi)));
+    esi += (eflags & DF)?-4:4;
+}
+
+EXTERNC void CCALL x86_rep_outsb(CPU)
+{
+    int32_t dir;
+
+    if (ecx == 0) return;
+
+    dir = (eflags & DF)?-1:1;
+
+    do {
+        X86_OutPortProcedure(edx & 0xffff, 1, *((uint8_t *)REG2PTR(esi)));
+        esi += dir;
+
+        ecx--;
+    } while (ecx != 0);
+}
+
+EXTERNC void CCALL x86_rep_outsw(CPU)
+{
+    int32_t dir;
+
+    if (ecx == 0) return;
+
+    dir = (eflags & DF)?-2:2;
+
+    do {
+        X86_OutPortProcedure(edx & 0xffff, 2, *((uint16_t *)REG2PTR(esi)));
+        esi += dir;
+
+        ecx--;
+    } while (ecx != 0);
+}
+
+EXTERNC void CCALL x86_rep_outsd(CPU)
+{
+    int32_t dir;
+
+    if (ecx == 0) return;
+
+    dir = (eflags & DF)?-4:4;
+
+    do {
+        X86_OutPortProcedure(edx & 0xffff, 4, *((uint32_t *)REG2PTR(esi)));
+        esi += dir;
+
+        ecx--;
+    } while (ecx != 0);
+}
+

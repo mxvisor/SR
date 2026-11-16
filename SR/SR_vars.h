@@ -65,6 +65,13 @@ EXTERNAL_VARIABLE uint_fast32_t SR_llasm_region_leftover;   // flags a dry-run r
 EXTERNAL_VARIABLE int ebp_dword_aligned;
 EXTERNAL_VARIABLE int code_writable;                    // the program writes into its code sections
 EXTERNAL_VARIABLE uint32_t code_object_mask;            // objects (bit = object number - 1) that hold code although the LE header does not mark them executable
+EXTERNAL_VARIABLE int exact_push16;                     // exact_push16 (SR.cfg): a 16-bit push/pop moves esp by 2, not by 4
+EXTERNAL_VARIABLE int int_stub_table;                   // int_stub_table (SR.cfg): look for a table of the 256 stubs `int N / ret`
+EXTERNAL_VARIABLE int int_stub_found;                   // the table is there: int_stub_section, int_stub_offset
+EXTERNAL_VARIABLE uint_fast32_t int_stub_section;
+EXTERNAL_VARIABLE uint_fast32_t int_stub_offset;
+EXTERNAL_VARIABLE int int_stub_used;                    // an instruction takes its address: the output has sr_int_stub
+EXTERNAL_VARIABLE char global_prefix[64];               // global_prefix (SR.cfg): put before every global name (alias) of the output
 
 #ifdef __cplusplus
 }

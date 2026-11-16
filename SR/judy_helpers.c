@@ -113,11 +113,13 @@ alias_data *section_alias_list_Insert(unsigned int SecNum, Word_t Index, const c
 {
     alias_data *alias, **alias_value;
 
-    alias = (alias_data *)malloc(sizeof(alias_data) + strlen(proc));
+    /* global_prefix of SR.cfg goes before every alias: they are the global names */
+    alias = (alias_data *)malloc(sizeof(alias_data) + strlen(global_prefix) + strlen(proc));
     if (alias == NULL) return NULL;
 
     alias->ofs = (uint_fast32_t)Index;
-    strcpy(alias->proc, proc);
+    strcpy(alias->proc, global_prefix);
+    strcat(alias->proc, proc);
 
     JLI(alias_value, section[SecNum].alias_list, Index);
     if ((alias_value == PJERR) || (alias_value == NULL))

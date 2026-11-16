@@ -728,6 +728,30 @@ int SR_write_output(const char *fname)
         }
     }
 
+    if (int_stub_used)
+    {
+        /* int_stub_table (SR.cfg): the stub `int N / ret` whose address the program
+         * took last (SR_full_llasm_instr.c, lea): N = its distance from the
+         * table / 3 (times the inverse of 3 modulo 2^32, exact for a multiple
+         * of 3); the interrupt, then the stub's ret */
+        char cbuf[32];
+
+        SR_get_label(cbuf, section[int_stub_section].start + int_stub_offset);
+        fprintf(EF.fout, "datasegment sr_int_stub_data\n");
+        fprintf(EF.fout, "dlabel sr_int_stub_address\n");
+        fprintf(EF.fout, "db 0\ndb 0\ndb 0\ndb 0\n");
+        fprintf(EF.fout, "endd\n\n");
+        fprintf(EF.fout, "proc sr_int_stub\n");
+        fprintf(EF.fout, "load tmp1, sr_int_stub_address, 4\n");
+        fprintf(EF.fout, "mov tmp2, %s\n", cbuf);
+        fprintf(EF.fout, "sub tmp2, tmp1, tmp2\n");
+        fprintf(EF.fout, "mul tmp2, tmp2, 0xaaaaaaab\n");
+        fprintf(EF.fout, "call x86_int $, tmp2\n");
+        fprintf(EF.fout, "POP tmp1\n");
+        fprintf(EF.fout, "tcall tmp1\n");
+        fprintf(EF.fout, "endp\n\n");
+    }
+
     for (EF.Entry = 0; EF.Entry < num_sections; EF.Entry++)
     {
         if (section[EF.Entry].type == ST_CODE)

@@ -4413,6 +4413,18 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 if (ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI)
                 {
                     SR_disassemble_get_memory_address(cOutput, X862LLREG(ud_obj.operand[0].base), &(ud_obj.operand[1]), fixup[1], extrn[1], ud_obj.operand[0].base, MADR_REG, &memadr);
+
+                    if (int_stub_found && fixup[1] != NULL && extrn[1] == NULL &&
+                        fixup[1]->tsec == int_stub_section && fixup[1]->tofs >= 0 && (uint_fast32_t)fixup[1]->tofs == int_stub_offset)
+                    {
+                        /* the address of stub N of the table `int N / ret` (int_stub_table
+                         * of SR.cfg), which the program enters by a jump or a return:
+                         * sr_int_stub does the stub (SR_output.c), with the stub's
+                         * address in sr_int_stub_address */
+                        OUTPUT_PARAMSTRING("store %s, sr_int_stub_address, 4\n", X86REGSTR(ud_obj.operand[0].base));
+                        OUTPUT_PARAMSTRING("mov %s, sr_int_stub\n", X86REGSTR(ud_obj.operand[0].base));
+                        int_stub_used = 1;
+                    }
                 }
             }
             break;
@@ -5400,10 +5412,56 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
             break;
+        case UD_Ioutsb:
+        case UD_Ioutsw:
+        case UD_Ioutsd:
+            {
+                /* no flags affected */
+                char *instr;
+
+                if (ud_obj.mnemonic == UD_Ioutsb) instr = "OUTSB";
+                else if (ud_obj.mnemonic == UD_Ioutsw) instr = "OUTSW";
+                else /*if (ud_obj.mnemonic == UD_Ioutsd)*/ instr = "OUTSD";
+
+                if (ud_obj.pfx_rep || ud_obj.pfx_repe || ud_obj.pfx_repne)
+                {
+                    OUTPUT_PARAMSTRING("REP_%s\n", instr);
+                }
+                else
+                {
+                    OUTPUT_PARAMSTRING("%s\n", instr);
+                }
+            }
+            break;
         case UD_Ipop:
             {
                 /* no flags affected */
-                if (fixup[0] == NULL &&
+                if (exact_push16 && ud_obj.opr_mode == 16)
+                {
+                    /* exact_push16 (SR.cfg): two bytes off the stack */
+                    if (ud_obj.operand[0].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_WRITE, ZERO_EXTEND, &memadr);
+                    }
+
+                    OUTPUT_STRING("load16z tmp1, esp, 2\n");
+                    OUTPUT_STRING("add esp, esp, 2\n");
+
+                    if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base == UD_R_SP)
+                    {
+                        OUTPUT_STRING("ins16 esp, esp, tmp1\n");
+                    }
+                    else if (ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[0].base >= UD_R_AX && ud_obj.operand[0].base <= UD_R_DI)
+                    {
+                        OUTPUT_PARAMSTRING("ins16 %s, %s, tmp1\n", X862LLSTR(ud_obj.operand[0].base), X862LLSTR(ud_obj.operand[0].base));
+                    }
+                    else if (ud_obj.operand[0].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
+                    }
+                    /* a segment register: nothing to load in the flat model */
+                }
+                else if (fixup[0] == NULL &&
                     ud_obj.operand[0].type == UD_OP_REG)
                 {
                     if (ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI)
@@ -5474,7 +5532,42 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
         case UD_Ipush:
             {
                 /* no flags affected */
-                if (fixup[0] == NULL &&
+                if (exact_push16 && ud_obj.opr_mode == 16)
+                {
+                    /* exact_push16 (SR.cfg): two bytes onto the stack */
+                    if (ud_obj.operand[0].type == UD_OP_REG)
+                    {
+                        if (ud_obj.operand[0].base >= UD_R_AX && ud_obj.operand[0].base <= UD_R_DI)
+                        {
+                            OUTPUT_PARAMSTRING("mov tmp1, %s\n", X862LLSTR(ud_obj.operand[0].base));
+                        }
+                        else
+                        {
+                            /* a segment register: 0 in the flat model */
+                            OUTPUT_STRING("mov tmp1, 0\n");
+                        }
+                    }
+                    else if (ud_obj.operand[0].type == UD_OP_MEM)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_READ, ZERO_EXTEND, &memadr);
+
+                        SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP1, READ16TO32ZERO);
+                    }
+                    else if (fixup[0] == NULL && ud_obj.operand[0].type == UD_OP_IMM)
+                    {
+                        OUTPUT_PARAMSTRING("mov tmp1, 0x%x\n", (unsigned int)(SR_disassemble_get_value(&(ud_obj.operand[0]), SIGN_EXTEND) & 0xffff));
+                    }
+                    else
+                    {
+                        SR_get_fixup_label(cAddress, fixup[0], extrn[0]);
+
+                        OUTPUT_PARAMSTRING("mov tmp1, %s\n", cAddress);
+                    }
+
+                    OUTPUT_STRING("sub esp, esp, 2\n");
+                    OUTPUT_STRING("store16 tmp1, esp, 2\n");
+                }
+                else if (fixup[0] == NULL &&
                     ud_obj.operand[0].type == UD_OP_REG)
                 {
                     if (ud_obj.operand[0].base >= UD_R_EAX && ud_obj.operand[0].base <= UD_R_EDI)

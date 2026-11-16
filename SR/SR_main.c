@@ -215,6 +215,48 @@ static void read_cfg(void)
                 code_writable = 0;
             }
         }
+        else if ( strcasecmp(str, "exact_push16") == 0 ) /* str equals "exact_push16" */
+        {
+            /* A push or pop of a 16-bit operand (push cx, pop ax, push word [m],
+             * push imm with the operand-size prefix) moves esp by 2, as the CPU
+             * does, and not by 4.  Code that pairs them only (push cx ... pop cx)
+             * works either way; code that takes the distance of a pointer from
+             * esp after such pushes needs it. */
+            if ( strcasecmp(param, "yes") == 0 ) /* param equals "yes" */
+            {
+                exact_push16 = 1;
+            }
+            else if ( strcasecmp(param, "no") == 0 ) /* param equals "no" */
+            {
+                exact_push16 = 0;
+            }
+        }
+        else if ( strcasecmp(str, "int_stub_table") == 0 ) /* str equals "int_stub_table" */
+        {
+            /* A table of the 256 three-byte stubs `int N / ret` (CD N C3), which a C
+             * library's int386() enters by returning into stub N: base + N*3 (the
+             * WATCOM library).  SR keeps the table as data; an instruction that
+             * takes its address (lea reg, [index+base]) gets the address of
+             * sr_int_stub, which does the stub's interrupt and return (SR_output.c). */
+            if ( strcasecmp(param, "yes") == 0 ) /* param equals "yes" */
+            {
+                int_stub_table = 1;
+            }
+            else if ( strcasecmp(param, "no") == 0 ) /* param equals "no" */
+            {
+                int_stub_table = 0;
+            }
+        }
+        else if ( strcasecmp(str, "global_prefix") == 0 ) /* str equals "global_prefix" */
+        {
+            /* Put before every global name of the output (the entry start_,
+             * stack_start, the aliases of global_aliases.sci): a second program
+             * of the game in the same binary has names of its own. */
+            if (strlen(param) < sizeof(global_prefix))
+            {
+                strcpy(global_prefix, param);
+            }
+        }
         else if ( strcasecmp(str, "code_object") == 0 ) /* str equals "code_object" */
         {
             /* LE object number (1-based) to treat as code, may be repeated */
@@ -263,6 +305,43 @@ static void deinitialize_values(void)
 	}
 }
 
+/* int_stub_table (SR.cfg): the first run of the 256 stubs `int N / ret` (CD N C3,
+ * N = 0..255) in a code section; the stub of int 3 is the one-byte int3 with a
+ * nop (CC 90 C3), as WATCOM's library has it */
+static void find_int_stub_table(void)
+{
+	unsigned int Entry;
+	uint_fast32_t ofs, n;
+
+	for (Entry = 0; Entry < num_sections; Entry++)
+	{
+		const uint8_t *adr = section[Entry].adr;
+
+		if (section[Entry].type != ST_CODE || adr == NULL || section[Entry].size_in_file < 3 * 256) continue;
+
+		for (ofs = 0; ofs + 3 * 256 <= section[Entry].size_in_file; ofs++)
+		{
+			for (n = 0; n < 256; n++)
+			{
+				const uint8_t *stub = adr + ofs + 3 * n;
+
+				if (stub[2] != 0xc3) break;
+				if (!(stub[0] == 0xcd && stub[1] == n) && !(n == 3 && stub[0] == 0xcc && stub[1] == 0x90)) break;
+			}
+			if (n == 256)
+			{
+				int_stub_found = 1;
+				int_stub_section = Entry;
+				int_stub_offset = ofs;
+				fprintf(stderr, "int stub table: section %i, offset 0x%x (0x%x)\n", (int)Entry, (unsigned int)ofs, (unsigned int)(section[Entry].start + ofs));
+				return;
+			}
+		}
+	}
+
+	fprintf(stderr, "Warning: int_stub_table: no table of the stubs `int N / ret`\n");
+}
+
 static void initialize_values(void)
 {
 	num_sections = 0;
@@ -278,6 +357,13 @@ static void initialize_values(void)
 	ebp_dword_aligned = 0;
 	code_writable = 0;
 	code_object_mask = 0;
+	exact_push16 = 0;
+	int_stub_table = 0;
+	int_stub_found = 0;
+	int_stub_section = 0;
+	int_stub_offset = 0;
+	int_stub_used = 0;
+	global_prefix[0] = 0;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 32);
@@ -320,6 +406,9 @@ int main (int argc, char *argv[])
 	fprintf(stderr, "ebp dword aligned: %s\n", (ebp_dword_aligned)?"yes":"no");
 	fprintf(stderr, "code writable: %s\n", (code_writable)?"yes":"no");
 	fprintf(stderr, "code objects (extra): 0x%x\n", (unsigned int)code_object_mask);
+	if (exact_push16) fprintf(stderr, "exact 16-bit push/pop: yes\n");
+	if (int_stub_table) fprintf(stderr, "int stub table: yes\n");
+	if (global_prefix[0]) fprintf(stderr, "global prefix: %s\n", global_prefix);
 
 	input_name = NULL;
 	output_name = NULL;
@@ -382,6 +471,11 @@ int main (int argc, char *argv[])
 		return 3;
 	}
 #endif
+
+	if (int_stub_table)
+	{
+		find_int_stub_table();
+	}
 
 	write_log_time(stderr);
 	fprintf(stderr, "Initial disassembly...\n");

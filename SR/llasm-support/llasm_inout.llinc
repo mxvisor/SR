@@ -36,6 +36,13 @@ funcv x86_out_dx_al $
 funcv x86_out_dx_ax $
 funcv x86_out_dx_eax $
 
+funcv x86_outsb $
+funcv x86_outsw $
+funcv x86_outsd $
+funcv x86_rep_outsb $
+funcv x86_rep_outsw $
+funcv x86_rep_outsd $
+
 
 macro IN_al_IMM portno
     call x86_in_al_imm $, \portno
@@ -84,5 +91,30 @@ endm
 
 macro OUT_DX_eax
     call x86_out_dx_eax $
+endm
+
+
+macro OUTSB
+    call x86_outsb $
+endm
+
+macro OUTSW
+    call x86_outsw $
+endm
+
+macro OUTSD
+    call x86_outsd $
+endm
+
+macro REP_OUTSB
+    call x86_rep_outsb $
+endm
+
+macro REP_OUTSW
+    call x86_rep_outsw $
+endm
+
+macro REP_OUTSD
+    call x86_rep_outsd $
 endm
 
