@@ -861,6 +861,45 @@ static int SR_list_handlers(const char *name)
 #endif
 
 
+#if (OUTPUT_TYPE != OUT_ORIG)
+/* An address of fixup_interpret_as_code.sci that an instruction reads or
+ * writes as memory ("mov ax,[ebx+table]"; lea, which only takes the address,
+ * aside) is a table, not code: SR translates it as a procedure, as the list
+ * says, and the program's copy of the table then holds other bytes.  Only a
+ * warning: SR's output stays as the list asks. */
+static void SR_check_code_fixup_as_memory(output_data *output, void *data)
+{
+    const unsigned int Entry = (unsigned int)(uintptr_t) data;
+    fixup_data *fixup;
+    ud_t u;
+    unsigned int op;
+    uint_fast32_t SecNum, RelAdr;
+    char label[32], where[32];
+
+    if (output->type != 2) return;
+    // only an instruction with a fixup: a displacement that is an address
+    fixup = section_fixup_list_FindEntryEqualOrHigher(Entry, output->ofs);
+    if (fixup == NULL || fixup->sofs >= output->ofs + output->len) return;
+
+    ud_init(&u);
+    ud_set_mode(&u, 32);
+    ud_set_input_buffer(&u, &(section[Entry].adr[output->ofs]), section[Entry].size - output->ofs);
+    ud_set_pc(&u, section[Entry].start + output->ofs);
+    if (ud_disassemble(&u) == 0 || u.mnemonic == UD_Ilea) return;
+
+    for (op = 0; op < 3; op++)
+    {
+        if (u.operand[op].type != UD_OP_MEM || u.operand[op].offset != 32) continue;
+        if (!SR_get_section_reladr(u.operand[op].lval.udword, &SecNum, &RelAdr)) continue;
+        if (section[SecNum].type != ST_CODE || !section_code_list_CanFindEntryEqual(SecNum, RelAdr)) continue;
+
+        SR_get_label(label, u.operand[op].lval.udword);
+        SR_get_label(where, section[Entry].start + output->ofs);
+        fprintf(stderr, "Warning: %s is in fixup_interpret_as_code.sci, but %s reads or writes it as memory: a table, not code?\n", label, where);
+    }
+}
+#endif
+
 int SR_full_disassembly(void)
 {
     unsigned int index;
@@ -945,6 +984,14 @@ int SR_full_disassembly(void)
     {
         ret = SR_list_handlers(handlers_name);
         if (ret) return ret;
+    }
+#endif
+
+#if (OUTPUT_TYPE != OUT_ORIG)
+    for (index = 0; index < num_sections; index++)
+    {
+        if (section[index].type != ST_CODE) continue;
+        section_output_list_ForEach(index, &SR_check_code_fixup_as_memory, (void *)(uintptr_t) index);
     }
 #endif
 

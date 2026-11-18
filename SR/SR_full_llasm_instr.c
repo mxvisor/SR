@@ -1621,6 +1621,38 @@ static int SR_check_extended_value(unsigned int Entry, uint_fast32_t ofs, int si
 
 #include "SR_full_llasm_instr_helper.h"
 
+/* rcl by 1 of the W-bit value in tmp1 (zero-extended) through CF: the result is in tmp1 (the caller stores its low W bits).
+   Uses tmp1 (value), tmp2, tmp3; needs Tflags_to_write, pOutput, cOutput, cOutPart. */
+#define RCL1_ON_TMP1(W, MASK) \
+    OUTPUT_STRING("and tmp3, eflags, CF\n"); \
+    if (Tflags_to_write & (FL_CARRY | FL_OVERFLOW)) \
+    { \
+        SR_disassemble_change_flags(pOutput, Tflags_to_write & (FL_CARRY | FL_OVERFLOW), 0, 0); \
+    } \
+    if (Tflags_to_write & FL_CARRY) \
+    { \
+        OUTPUT_PARAMSTRING("lshr tmp2, tmp1, %d - CF_SHIFT\n", (W) - 1); \
+        OUTPUT_STRING("and tmp2, tmp2, CF\n"); \
+        OUTPUT_STRING("or eflags, eflags, tmp2\n"); \
+    } \
+    if (Tflags_to_write & FL_OVERFLOW) \
+    { \
+        OUTPUT_STRING("shl tmp2, tmp1, 1\n"); \
+        OUTPUT_STRING("xor tmp2, tmp2, tmp1\n"); \
+        OUTPUT_PARAMSTRING("and tmp2, tmp2, 0x%x\n", (unsigned int)(MASK)); \
+        if ((W) == 8) /* bit 7 is below OF (bit 11) */ \
+        { \
+            OUTPUT_STRING("shl tmp2, tmp2, OF_SHIFT - 7\n"); \
+        } \
+        else \
+        { \
+            OUTPUT_PARAMSTRING("lshr tmp2, tmp2, %d - OF_SHIFT\n", (W) - 1); \
+        } \
+        OUTPUT_STRING("or eflags, eflags, tmp2\n"); \
+    } \
+    OUTPUT_STRING("shl tmp1, tmp1, 1\n"); \
+    OUTPUT_STRING("or tmp1, tmp1, tmp3\n");
+
 int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, uint_fast32_t flags_to_write, uint_fast32_t *pflags_write, uint_fast32_t *pflags_read, int *plast_instruction)
 {
     char cOutput[8192];
@@ -1819,6 +1851,25 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         if (ud_obj.operand[1].type == UD_OP_REG)
                         {
                             SR_llasm_helper_adc_16(ud_obj.mnemonic, X86162LLREG(ud_obj.operand[0].base), X86162LLREG(ud_obj.operand[1].base), 0);
+                        }
+                        else if (ud_obj.operand[1].type == UD_OP_MEM)
+                        {
+                            SR_disassemble_get_madr(cOutput, &(ud_obj.operand[1]), fixup[1], extrn[1], UD_NONE, MADR_READ, ZERO_EXTEND, &memadr);
+
+                            SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP1, READ16TO32ZERO);
+
+                            SR_llasm_helper_adc_16(ud_obj.mnemonic, X86162LLREG(ud_obj.operand[0].base), LR_TMP1, 0);
+                        }
+                        else if (ud_obj.operand[1].type == UD_OP_IMM)
+                        {
+                            if (fixup[1] == NULL)
+                            {
+                                int32_t value;
+
+                                value = (int32_t) (SR_disassemble_get_value(&(ud_obj.operand[1]), SIGN_EXTEND) << 16);
+
+                                SR_llasm_helper_adc_16(ud_obj.mnemonic, X86162LLREG(ud_obj.operand[0].base), LR_NONE, value);
+                            }
                         }
                     }
                     else if (ud_obj.operand[0].base >= UD_R_AL && ud_obj.operand[0].base <= UD_R_BL)
@@ -3483,6 +3534,17 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         OUTPUT_PARAMSTRING("ext16s tmp1, %s\n", X862LLSTR(ud_obj.operand[0].base));
                         OUTPUT_STRING("IDIV_32 tmp1\n");
                     }
+                    else if (ud_obj.operand[0].base >= UD_R_AL && ud_obj.operand[0].base <= UD_R_BL)
+                    {
+                        OUTPUT_PARAMSTRING("ext8s tmp1, %s\n", X862LLSTR(ud_obj.operand[0].base));
+                        OUTPUT_STRING("IDIV_16 tmp1\n");
+                    }
+                    else if (ud_obj.operand[0].base >= UD_R_AH && ud_obj.operand[0].base <= UD_R_BH)
+                    {
+                        OUTPUT_PARAMSTRING("lshr tmp1, %s, 8\n", X862LLSTR(ud_obj.operand[0].base));
+                        OUTPUT_STRING("ext8s tmp1, tmp1\n");
+                        OUTPUT_STRING("IDIV_16 tmp1\n");
+                    }
                 }
                 else if (ud_obj.operand[0].type == UD_OP_MEM)
                 {
@@ -3506,6 +3568,14 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP3, READ16TO32SIGN);
 
                         OUTPUT_STRING("IDIV_32 tmp3\n");
+                    }
+                    else if (ud_obj.operand[0].size == 8)
+                    {
+                        SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_READ, SIGN_EXTEND, &memadr);
+
+                        SR_disassemble_read_mem_byte(cOutput, &memadr, LR_TMP3, READ8TO32SIGN);
+
+                        OUTPUT_STRING("IDIV_16 tmp3\n");
                     }
                 }
             }
@@ -3622,6 +3692,25 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                                 SR_disassemble_change_flags(pOutput, Tflags_to_write, 0, 0);
 
                                 OUTPUT_STRING("ext16s tmp2, tmp1\n");
+                                OUTPUT_STRING("cmoveq tmp1, tmp2, tmp3, 0, CF | OF\n");
+                                OUTPUT_STRING("or eflags, eflags, tmp3\n");
+                            }
+                        }
+                        else if (ud_obj.operand[0].size == 8)
+                        {
+                            SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_READ, SIGN_EXTEND, &memadr);
+
+                            SR_disassemble_read_mem_byte(cOutput, &memadr, LR_TMP2, READ8TO32SIGN);
+
+                            OUTPUT_STRING("ext8s tmp1, eax\n");
+                            OUTPUT_STRING("mul tmp1, tmp1, tmp2\n");
+                            OUTPUT_STRING("ins16 eax, eax, tmp1\n");
+
+                            if (flags_to_write & (FL_CARRY | FL_OVERFLOW))
+                            {
+                                SR_disassemble_change_flags(pOutput, Tflags_to_write, 0, 0);
+
+                                OUTPUT_STRING("ext8s tmp2, tmp1\n");
                                 OUTPUT_STRING("cmoveq tmp1, tmp2, tmp3, 0, CF | OF\n");
                                 OUTPUT_STRING("or eflags, eflags, tmp3\n");
                             }
@@ -5362,6 +5451,9 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                     }
                     else if (ud_obj.operand[0].base >= UD_R_AH && ud_obj.operand[0].base <= UD_R_BH)
                     {
+                        OUTPUT_PARAMSTRING("lshr tmp1, %s, 8\n", X862LLSTR(ud_obj.operand[0].base));
+                        OUTPUT_STRING("xor tmp1, tmp1, 0xff\n");
+                        OUTPUT_PARAMSTRING("ins8hl %s, %s, tmp1\n", X862LLSTR(ud_obj.operand[0].base), X862LLSTR(ud_obj.operand[0].base));
                     }
                 }
                 else if (ud_obj.operand[0].type == UD_OP_MEM)
@@ -5786,6 +5878,44 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                             }
 
                         }
+                    }
+                    else if (ud_obj.operand[0].base >= UD_R_AL && ud_obj.operand[0].base <= UD_R_BL &&
+                             (ud_obj.operand[1].type == UD_OP_CONST || (ud_obj.operand[1].type == UD_OP_IMM && ((SR_disassemble_get_value(&(ud_obj.operand[1]), ZERO_EXTEND) & 0x1f) % 9) == 1)))
+                    {
+                        OUTPUT_PARAMSTRING("and tmp1, %s, 0xff\n", X862LLSTR(ud_obj.operand[0].base));
+                        RCL1_ON_TMP1(8, 0x80)
+                        OUTPUT_PARAMSTRING("ins8ll %s, %s, tmp1\n", X862LLSTR(ud_obj.operand[0].base), X862LLSTR(ud_obj.operand[0].base));
+                    }
+                    else if (ud_obj.operand[0].base >= UD_R_AH && ud_obj.operand[0].base <= UD_R_BH &&
+                             (ud_obj.operand[1].type == UD_OP_CONST || (ud_obj.operand[1].type == UD_OP_IMM && ((SR_disassemble_get_value(&(ud_obj.operand[1]), ZERO_EXTEND) & 0x1f) % 9) == 1)))
+                    {
+                        OUTPUT_PARAMSTRING("lshr tmp1, %s, 8\n", X862LLSTR(ud_obj.operand[0].base));
+                        OUTPUT_STRING("and tmp1, tmp1, 0xff\n");
+                        RCL1_ON_TMP1(8, 0x80)
+                        OUTPUT_PARAMSTRING("ins8hl %s, %s, tmp1\n", X862LLSTR(ud_obj.operand[0].base), X862LLSTR(ud_obj.operand[0].base));
+                    }
+                }
+                else if (ud_obj.operand[0].type == UD_OP_MEM &&
+                         (ud_obj.operand[1].type == UD_OP_CONST || (ud_obj.operand[1].type == UD_OP_IMM && SR_disassemble_get_value(&(ud_obj.operand[1]), ZERO_EXTEND) == 1)))
+                {
+                    SR_disassemble_get_madr(cOutput, &(ud_obj.operand[0]), fixup[0], extrn[0], UD_NONE, MADR_RW, ZERO_EXTEND, &memadr);
+                    if (ud_obj.operand[0].size == 32)
+                    {
+                        SR_disassemble_read_mem_word(cOutput, &memadr, LR_TMP1);
+                        RCL1_ON_TMP1(32, 0x80000000u)
+                        SR_disassemble_write_mem_word(cOutput, &memadr, LR_TMP1);
+                    }
+                    else if (ud_obj.operand[0].size == 16)
+                    {
+                        SR_disassemble_read_mem_halfword(cOutput, &memadr, LR_TMP1, READ16TO32ZERO);
+                        RCL1_ON_TMP1(16, 0x8000)
+                        SR_disassemble_write_mem_halfword(cOutput, &memadr, LR_TMP1);
+                    }
+                    else if (ud_obj.operand[0].size == 8)
+                    {
+                        SR_disassemble_read_mem_byte(cOutput, &memadr, LR_TMP1, READ8TO32ZERO);
+                        RCL1_ON_TMP1(8, 0x80)
+                        SR_disassemble_write_mem_byte(cOutput, &memadr, LR_TMP1, WRITE8LOW);
                     }
                 }
 
@@ -7223,6 +7353,10 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                         {
                             if (ud_obj.operand[1].base >= UD_R_AL && ud_obj.operand[1].base <= UD_R_BL)
                             {
+                                if (SR_llasm_helper_and_8h(ud_obj.mnemonic, LR_TMP1, X868H2LLREG(ud_obj.operand[0].base), X868L2LLREG(ud_obj.operand[1].base), 0))
+                                {
+                                    flags_write = flags_to_write;
+                                }
                             }
                             else if (ud_obj.operand[1].base >= UD_R_AH && ud_obj.operand[1].base <= UD_R_BH)
                             {
