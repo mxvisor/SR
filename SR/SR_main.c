@@ -215,6 +215,22 @@ static void read_cfg(void)
                 code_writable = 0;
             }
         }
+        else if ( strcasecmp(str, "self_modifying_code") == 0 ) /* str equals "self_modifying_code" */
+        {
+            /* The program writes immediates and displacements of its own
+               instructions (an inner loop patched with the values of a call):
+               each such instruction gets a copy in the data segment smc, the
+               writes go to the copy and the instruction reads the operand from
+               it.  llasm output only. */
+            if ( strcasecmp(param, "yes") == 0 ) /* param equals "yes" */
+            {
+                self_modifying_code = 1;
+            }
+            else if ( strcasecmp(param, "no") == 0 ) /* param equals "no" */
+            {
+                self_modifying_code = 0;
+            }
+        }
         else if ( strcasecmp(str, "exact_push16") == 0 ) /* str equals "exact_push16" */
         {
             /* A push or pop of a 16-bit operand (push cx, pop ax, push word [m],
@@ -298,6 +314,13 @@ static void deinitialize_values(void)
 	}
 	num_sections = 0;
 
+	if (smc_list != NULL)
+	{
+		free(smc_list);
+		smc_list = NULL;
+	}
+	smc_count = 0;
+
 	if (SR_CodeBase != NULL)
 	{
 		free(SR_CodeBase);
@@ -364,6 +387,9 @@ static void initialize_values(void)
 	int_stub_offset = 0;
 	int_stub_used = 0;
 	global_prefix[0] = 0;
+	self_modifying_code = 0;
+	smc_list = NULL;
+	smc_count = 0;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 32);
@@ -409,6 +435,7 @@ int main (int argc, char *argv[])
 	if (exact_push16) fprintf(stderr, "exact 16-bit push/pop: yes\n");
 	if (int_stub_table) fprintf(stderr, "int stub table: yes\n");
 	if (global_prefix[0]) fprintf(stderr, "global prefix: %s\n", global_prefix);
+	if (self_modifying_code) fprintf(stderr, "self-modifying code: yes\n");
 
 	input_name = NULL;
 	output_name = NULL;

@@ -149,6 +149,13 @@ typedef struct _region_data_ {
     uint_fast32_t flags_accept;     // flags the region reads before writing them (set by its predecessors)
 } region_data;
 
+typedef struct _smc_data_ {
+    uint_fast32_t sec;          // section of an instruction the program writes into (self_modifying_code)
+    uint_fast32_t ofs;          // its offset
+    uint_fast32_t len;          // its length in bytes
+    uint_fast32_t written;      // its bytes the program writes (bit = byte offset in the instruction)
+} smc_data;
+
 typedef struct _section_data_ {
     uint_fast32_t size;         // section size
     uint_fast32_t size_in_file; // section size stored in file

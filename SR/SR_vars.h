@@ -72,6 +72,9 @@ EXTERNAL_VARIABLE uint_fast32_t int_stub_section;
 EXTERNAL_VARIABLE uint_fast32_t int_stub_offset;
 EXTERNAL_VARIABLE int int_stub_used;                    // an instruction takes its address: the output has sr_int_stub
 EXTERNAL_VARIABLE char global_prefix[64];               // global_prefix (SR.cfg): put before every global name (alias) of the output
+EXTERNAL_VARIABLE int self_modifying_code;              // self_modifying_code (SR.cfg): the program writes operands of its instructions, which live in data (smc_<address>)
+EXTERNAL_VARIABLE smc_data *smc_list;                   // the instructions it writes into, sorted by section and offset
+EXTERNAL_VARIABLE uint_fast32_t smc_count;
 
 #ifdef __cplusplus
 }
@@ -94,6 +97,7 @@ int SR_LoadSCI(void);
 int SR_initial_disassembly(void);
 int SR_apply_fixup_info(void);
 int SR_full_disassembly(void);
+const smc_data *SR_smc_find(uint_fast32_t SecNum, uint_fast32_t RelAdr);
 int SR_write_output(const char *fname);
 
 

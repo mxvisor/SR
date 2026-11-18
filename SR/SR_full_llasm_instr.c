@@ -94,6 +94,10 @@ static const enum ll_regs ll_regs_table[] = {
 static char *pOutput;
 static uint_fast32_t Tflags_to_write;
 
+// self_modifying_code (SR.cfg): the operands of the current instruction that the program writes
+static fixup_data smc_fixup[3];         // a fixup to the operand's bytes in the instruction (named smc_<address>[n])
+static int smc_disp[3];                 // the operand is a displacement: the address adds the value of the copy
+
 
 /*
 #define X86REGSTR(x) ud_reg_tab[(x) - UD_R_AL]
@@ -308,6 +312,18 @@ static void SR_get_fixup_label(char *cResult, const fixup_data *fixup, const ext
         return;
     }
 
+    if (smc_count != 0 && fixup->tofs > 0)
+    {
+        const smc_data *smc;
+
+        smc = SR_smc_find(fixup->tsec, (uint_fast32_t) fixup->tofs);
+        if (smc != NULL && smc->ofs != (uint_fast32_t) fixup->tofs)
+        {
+            sprintf(cResult, "smc_%X[%i]", (unsigned int)(section[smc->sec].start + smc->ofs), (int)(fixup->tofs - smc->ofs));
+            return;
+        }
+    }
+
     // locate label
     label_value = section_label_list_FindEntryEqual(fixup->tsec, fixup->tofs);
 
@@ -453,6 +469,22 @@ static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, 
     int_fast32_t distance;
     int32_t displacement;
     uint_fast32_t sec, ofs;
+    int smc_operand, smc_load;
+
+    // self_modifying_code: the fixup names the copy of a written operand; a written displacement is loaded from it
+    smc_operand = 0;
+    smc_load = 0;
+    if (fixup != NULL && extrn == NULL && smc_count != 0 && fixup->tofs > 0)
+    {
+        const smc_data *smc;
+
+        smc = SR_smc_find(fixup->tsec, (uint_fast32_t) fixup->tofs);
+        if (smc != NULL && smc->ofs != (uint_fast32_t) fixup->tofs)
+        {
+            smc_operand = 1;
+            if (fixup >= &(smc_fixup[0]) && fixup <= &(smc_fixup[2]) && smc_disp[fixup - &(smc_fixup[0])]) smc_load = 1;
+        }
+    }
 
     if (esp_dword_aligned)
     {
@@ -564,7 +596,7 @@ static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, 
                 return;
             }
         }
-        else if (fixup != NULL)
+        else if (fixup != NULL && !smc_load)
         {
             if ((op->size == 8) || (op->size == 16) || (op->size == 32))
             {
@@ -624,7 +656,12 @@ static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, 
 
     if (fixup != NULL)
     {
-        if (extrn == NULL)
+        if (smc_operand)
+        {
+            // the copy of an instruction's bytes: no alignment known
+            result->align = 1;
+        }
+        else if (extrn == NULL)
         {
             if (section[fixup->tsec].type == ST_CODE)
             {
@@ -715,7 +752,11 @@ static void SR_disassemble_get_memory_address(char *ostr, enum ll_regs madrreg, 
         SR_get_fixup_label(cFixupLabel, fixup, extrn);
 
         first = 0;
-        if (use_madrreg)
+        if (smc_load)
+        {
+            ADD_OSTR("load %s, %s, 1\n", (numop)?LLREGSTR(LR_TMPADR):LLREGSTR(madrreg), cFixupLabel)
+        }
+        else if (use_madrreg)
         {
             ADD_OSTR("mov %s, %s\n", (numop)?LLREGSTR(LR_TMPADR):LLREGSTR(madrreg), cFixupLabel)
         }
@@ -1653,6 +1694,132 @@ static int SR_check_extended_value(unsigned int Entry, uint_fast32_t ofs, int si
     OUTPUT_STRING("shl tmp1, tmp1, 1\n"); \
     OUTPUT_STRING("or tmp1, tmp1, tmp3\n");
 
+/* self_modifying_code (SR.cfg): the program writes bytes of this instruction.
+ * A written displacement (disp32) stays a memory operand whose address adds
+ * the value of the copy (smc_<address>[n]); a written immediate becomes a
+ * memory operand that reads the copy, in the forms that have one: mov, add,
+ * sub, adc, sbb, and, or, xor, cmp, test and push with an immediate of the
+ * operand's size, and imul r32, r32, imm32 (as imul r32, [copy]).  Any other
+ * written byte is an error. */
+// the size of a general register (udis86 leaves the size of some register operands, mov r32, imm32, at 0)
+static unsigned int SR_smc_reg_size(enum ud_type reg)
+{
+    if (reg >= UD_R_EAX && reg <= UD_R_EDI) return 32;
+    if (reg >= UD_R_AX && reg <= UD_R_DI) return 16;
+    if (reg >= UD_R_AL && reg <= UD_R_BH) return 8;
+    return 0;
+}
+
+static int SR_smc_operands(unsigned int Entry, uint_fast32_t cur_ofs, unsigned int decoded_length, fixup_data **fixup, extrn_data **extrn)
+{
+    const smc_data *smc;
+    unsigned int i, imm_bytes, disp_ofs, size;
+    int k, imm_op, mem_op;
+    char label[32];
+
+    smc = SR_smc_find(Entry, cur_ofs);
+    if (smc == NULL || smc->ofs != cur_ofs) return 0;
+
+    imm_op = -1;
+    mem_op = -1;
+    imm_bytes = 0;
+    for (k = 0; k < 3; k++)
+    {
+        if (ud_obj.operand[k].type == UD_OP_IMM)
+        {
+            if (imm_op < 0)
+            {
+                imm_op = k;
+                imm_bytes = ud_obj.operand[k].size / 8;
+            }
+            else imm_op = 3;    // two immediates (enter): not handled
+        }
+        else if (ud_obj.operand[k].type == UD_OP_MEM)
+        {
+            mem_op = k;
+        }
+    }
+    disp_ofs = decoded_length - imm_bytes - 4;
+
+    for (i = 1; i < decoded_length; i += size)
+    {
+        size = 1;
+        if (!(smc->written & (1u << i))) continue;
+
+        k = -1;
+        if (imm_op >= 0 && imm_op < 3 && i == decoded_length - imm_bytes)
+        {
+            switch (ud_obj.mnemonic)
+            {
+                case UD_Imov:
+                case UD_Iadd:
+                case UD_Isub:
+                case UD_Iadc:
+                case UD_Isbb:
+                case UD_Iand:
+                case UD_Ior:
+                case UD_Ixor:
+                case UD_Icmp:
+                case UD_Itest:
+                    if (imm_op == 1 && ud_obj.operand[0].type == UD_OP_REG && SR_smc_reg_size(ud_obj.operand[0].base) == ud_obj.operand[1].size) k = 1;
+                    break;
+                case UD_Ipush:
+                    if (imm_op == 0 && ud_obj.operand[0].size == 32) k = 0;
+                    break;
+                case UD_Iimul:
+                    if (imm_op == 2 && ud_obj.operand[0].type == UD_OP_REG && ud_obj.operand[1].type == UD_OP_REG &&
+                        ud_obj.operand[0].base == ud_obj.operand[1].base && ud_obj.operand[2].size == SR_smc_reg_size(ud_obj.operand[0].base))
+                    {
+                        // imul r, r, imm = imul r, [copy]: the immediate moves to the second operand
+                        ud_obj.operand[1] = ud_obj.operand[2];
+                        ud_obj.operand[2].type = UD_NONE;
+                        fixup[1] = fixup[2];
+                        extrn[1] = extrn[2];
+                        fixup[2] = NULL;
+                        extrn[2] = NULL;
+                        k = 1;
+                    }
+                    break;
+                default:
+                    break;
+            }
+
+            if (k >= 0)
+            {
+                ud_obj.operand[k].type = UD_OP_MEM;
+                ud_obj.operand[k].base = UD_NONE;
+                ud_obj.operand[k].index = UD_NONE;
+                ud_obj.operand[k].scale = 0;
+                ud_obj.operand[k].offset = 32;
+                ud_obj.operand[k].lval.udword = 0;
+                size = imm_bytes;
+            }
+        }
+        else if (mem_op >= 0 && ud_obj.operand[mem_op].offset == 32 && i == disp_ofs)
+        {
+            k = mem_op;
+            smc_disp[k] = 1;
+            size = 4;
+        }
+
+        if (k < 0)
+        {
+            SR_get_label(label, section[Entry].start + cur_ofs);
+            fprintf(stderr, "Error: self-modifying code: SR cannot read byte %i of %s from its copy - %s\n", i, label, ud_insn_asm(&ud_obj));
+            return 1;
+        }
+
+        smc_fixup[k].sofs = cur_ofs + i;
+        smc_fixup[k].tofs = (int_fast32_t)(cur_ofs + i);
+        smc_fixup[k].tsec = Entry;
+        smc_fixup[k].type = FT_NORMAL;
+        fixup[k] = &(smc_fixup[k]);
+        extrn[k] = NULL;
+    }
+
+    return 0;
+}
+
 int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, uint_fast32_t flags_to_write, uint_fast32_t *pflags_write, uint_fast32_t *pflags_read, int *plast_instruction)
 {
     char cOutput[8192];
@@ -1756,6 +1923,12 @@ int SR_disassemble_llasm_instruction(unsigned int Entry, output_data *output, ui
                 }
             }
         }
+    }
+
+    smc_disp[0] = smc_disp[1] = smc_disp[2] = 0;
+    if (smc_count != 0)
+    {
+        if (SR_smc_operands(Entry, cur_ofs, decoded_length, fixup, extrn)) return 9;
     }
 
     cOutput[0] = 0;
