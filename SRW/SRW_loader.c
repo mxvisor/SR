@@ -1218,7 +1218,9 @@ int SRW_LoadFile(const char *fname)
                 import = FindImportName(ProcName);
                 if (import)
                 {
-                    if (0 != strcmp(import->DllName, DllName))
+                    // the names of DLLs are not case sensitive: a WATCOM linker can
+                    // leave two descriptors of one DLL, USER32.dll and USER32.DLL
+                    if (0 != strcasecmp(import->DllName, DllName))
                     {
                         unload_file(&mf);
                         fprintf(stderr, "Error: import name conflict - %i\n", ImportNum);
