@@ -63,6 +63,10 @@ EXTERNAL_VARIABLE int ebp_dword_aligned;
 
 EXTERNAL_VARIABLE Pvoid_t import_list;
 
+EXTERNAL_VARIABLE int self_modifying_code;              // self_modifying_code (SR.cfg): the program writes operands of its instructions, which live in data (smc_<address>)
+EXTERNAL_VARIABLE smc_data *smc_list;                   // the instructions it writes into, sorted by section and offset
+EXTERNAL_VARIABLE uint_fast32_t smc_count;
+
 #ifdef __cplusplus
 }
 #endif
@@ -87,6 +91,7 @@ int SR_is_guest_address_target(uint32_t address);
 int SR_initial_disassembly(void);
 int SR_apply_fixup_info(void);
 int SR_full_disassembly(void);
+const smc_data *SR_smc_find(uint_fast32_t SecNum, uint_fast32_t RelAdr);
 int SR_write_output(const char *fname);
 
 

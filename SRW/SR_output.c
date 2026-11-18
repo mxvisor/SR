@@ -833,6 +833,25 @@ int SR_write_output(const char *fname)
 #endif
     }
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+    // self_modifying_code (SR.cfg): the copies of the instructions whose operands the program writes
+    if (smc_count != 0)
+    {
+        uint_fast32_t i, j;
+
+        fprintf(EF.fout, "\ndatasegment smc\n");
+        for (i = 0; i < smc_count; i++)
+        {
+            fprintf(EF.fout, "dlabel smc_%X\n", (unsigned int)(section[smc_list[i].sec].start + smc_list[i].ofs));
+            for (j = 0; j < smc_list[i].len; j++)
+            {
+                fprintf(EF.fout, "db %u\n", (unsigned int) section[smc_list[i].sec].adr[smc_list[i].ofs + j]);
+            }
+        }
+        fprintf(EF.fout, "endd\n");
+    }
+#endif
+
 #if (OUTPUT_TYPE == OUT_X64)
     fprintf(EF.fout, "\n%%ifidn __OUTPUT_FORMAT__, win64\n");
     fprintf(EF.fout, "section .pdata rdata align=4\n");

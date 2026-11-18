@@ -203,6 +203,22 @@ static void read_cfg(void)
                 ebp_dword_aligned = 0;
             }
         }
+        else if ( strcasecmp(str, "self_modifying_code") == 0 ) /* str equals "self_modifying_code" */
+        {
+            /* The program writes immediates and displacements of its own
+               instructions (an inner loop patched with the values of a call):
+               each such instruction gets a copy in the data segment smc, the
+               writes go to the copy and the instruction reads the operand from
+               it.  llasm output only. */
+            if ( strcasecmp(param, "yes") == 0 ) /* param equals "yes" */
+            {
+                self_modifying_code = 1;
+            }
+            else if ( strcasecmp(param, "no") == 0 ) /* param equals "no" */
+            {
+                self_modifying_code = 0;
+            }
+        }
     }
 
     fclose(f);
@@ -237,6 +253,13 @@ static void deinitialize_values(void)
 
 	import_list_Free();
 
+	if (smc_list != NULL)
+	{
+		free(smc_list);
+		smc_list = NULL;
+	}
+	smc_count = 0;
+
 	if (SR_CodeBase != NULL)
 	{
 		free(SR_CodeBase);
@@ -256,6 +279,9 @@ static void initialize_values(void)
 
 	esp_dword_aligned = 0;
 	ebp_dword_aligned = 0;
+	self_modifying_code = 0;
+	smc_list = NULL;
+	smc_count = 0;
 
 	ud_init(&ud_obj);
 	ud_set_mode(&ud_obj, 32);
@@ -294,6 +320,7 @@ int main (int argc, char *argv[])
 
 	fprintf(stderr, "esp dword aligned: %s\n", (esp_dword_aligned)?"yes":"no");
 	fprintf(stderr, "ebp dword aligned: %s\n", (ebp_dword_aligned)?"yes":"no");
+	if (self_modifying_code) fprintf(stderr, "self-modifying code: yes\n");
 
 	input_name = NULL;
 	output_name = NULL;

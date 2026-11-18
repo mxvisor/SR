@@ -129,6 +129,43 @@ static void SR_disassemble_ignore_instructions(Word_t Index, int Value, void *da
 #undef DATA
 }
 
+/* a replacement whose last line is endp ends its procedure (its own tcall
+ * before it): no code follows it but what something else reaches */
+static int SR_replacement_ends_flow(const char *instr)
+{
+    const char *last;
+    size_t length;
+
+    if (instr == NULL) return 0;
+    length = strlen(instr);
+    while (length != 0 && (instr[length - 1] == ' ' || instr[length - 1] == '\t' || instr[length - 1] == '\n')) length--;
+    last = instr + length;
+    while (last != instr && last[-1] != '\n') last--;
+    while (*last == ' ' || *last == '\t') last++;
+    return (instr + length - last == 4 && strncmp(last, "endp", 4) == 0)?1:0;
+}
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+/* a label of the data that only a replacement names (no relocation points
+ * there): the address after a call whose callee takes its return address */
+static void SR_label_replacement_data(replace_data *item, void *data)
+{
+    const char *pos;
+    unsigned int address;
+    uint_fast32_t SecNum, RelAdr;
+    output_data *output;
+
+    (void) data;
+    for (pos = (item->instr != NULL)?strstr(item->instr, "loc_"):NULL; pos != NULL; pos = strstr(pos + 4, "loc_"))
+    {
+        if (sscanf(pos + 4, "%X", &address) != 1) continue;
+        if (!SR_get_section_reladr(address, &SecNum, &RelAdr)) continue;
+        output = section_output_list_FindEntryEqual(SecNum, RelAdr);
+        if (output != NULL && output->type != OT_INSTRUCTION) output->has_label = 1;
+    }
+}
+#endif
+
 static void SR_disassemble_replace_instructions(replace_data *item, void *data)
 {
     output_data *output;
@@ -146,7 +183,11 @@ static void SR_disassemble_replace_instructions(replace_data *item, void *data)
         if (bound != NULL) bound->begin = 1;
     }
 
-    if (section[DATA].type == ST_CODE)
+    // a replacement that ends its procedure (endp) does not continue after the
+    // replaced bytes: what follows them is code only when something else reaches
+    // it (a call whose callee takes its return address for the address of the
+    // data after the call)
+    if (section[DATA].type == ST_CODE && !SR_replacement_ends_flow(item->instr))
     {
         section_entry_list_Insert(DATA, item->ofs + item->length);
         bound = section_bound_list_Insert(DATA, item->ofs + item->length);
@@ -631,6 +672,125 @@ done:
 }
 #endif
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+/* self_modifying_code (SR.cfg): the instructions whose bytes after the first a
+ * fixup points to.  The program writes an operand of such an instruction (an
+ * immediate or a displacement, patched before an inner loop runs); SR gives each
+ * one a copy in the data segment smc (smc_<address>), the fixups name the copy
+ * and the instruction reads the patched operand from it. */
+static uint_fast32_t smc_capacity;
+
+/* the instruction of smc_list that holds RelAdr (its first byte or a later one), or NULL */
+const smc_data *SR_smc_find(uint_fast32_t SecNum, uint_fast32_t RelAdr)
+{
+    uint_fast32_t lo, hi, mid;
+    const smc_data *smc;
+
+    lo = 0;
+    hi = smc_count;
+    while (lo < hi)
+    {
+        mid = (lo + hi) / 2;
+        smc = &(smc_list[mid]);
+        if (smc->sec < SecNum || (smc->sec == SecNum && smc->ofs + smc->len <= RelAdr)) lo = mid + 1;
+        else if (smc->sec > SecNum || smc->ofs > RelAdr) hi = mid;
+        else return smc;
+    }
+    return NULL;
+}
+
+static void SR_smc_collect_fixup(fixup_data *fixup, void *data)
+{
+    output_data *output;
+    uint_fast32_t i, tofs;
+
+    (void) data;
+    if (fixup->type != FT_NORMAL || fixup->tofs < 0 || section[fixup->tsec].type != ST_CODE) return;
+    tofs = (uint_fast32_t) fixup->tofs;
+
+    output = section_output_list_FindEntryEqualOrLower(fixup->tsec, tofs);
+    if (output == NULL || output->type != OT_INSTRUCTION || output->ofs == tofs || tofs > output->ofs + output->len) return;
+
+    for (i = 0; i < smc_count; i++)
+    {
+        if (smc_list[i].sec == fixup->tsec && smc_list[i].ofs == output->ofs) break;
+    }
+    if (i == smc_count)
+    {
+        if (smc_count == smc_capacity)
+        {
+            smc_data *list;
+
+            smc_capacity = (smc_capacity)?(2 * smc_capacity):64;
+            list = (smc_data *) realloc(smc_list, smc_capacity * sizeof(smc_data));
+            if (list == NULL) return;
+            smc_list = list;
+        }
+        smc_list[i].sec = fixup->tsec;
+        smc_list[i].ofs = output->ofs;
+        smc_list[i].len = output->len + 1;
+        smc_list[i].written = 0;
+        smc_count++;
+    }
+    smc_list[i].written |= 1u << (tofs - output->ofs);
+}
+
+static int SR_smc_compare(const void *a, const void *b)
+{
+    const smc_data *x = (const smc_data *) a, *y = (const smc_data *) b;
+
+    if (x->sec != y->sec) return (x->sec < y->sec)?-1:1;
+    if (x->ofs != y->ofs) return (x->ofs < y->ofs)?-1:1;
+    return 0;
+}
+
+/* a pointer of the data (daddr, made before the code was known) to a written operand names its copy */
+static void SR_smc_fix_data_pointer(fixup_data *fixup, void *data)
+{
+    const unsigned int Entry = (unsigned int)(uintptr_t) data;
+    const smc_data *smc;
+    output_data *output;
+    char cbuf[64];
+
+    if (fixup->type != FT_NORMAL || fixup->tofs < 0) return;
+    smc = SR_smc_find(fixup->tsec, (uint_fast32_t) fixup->tofs);
+    if (smc == NULL || smc->ofs == (uint_fast32_t) fixup->tofs) return;
+
+    output = section_output_list_FindEntryEqual(Entry, fixup->sofs);
+    if (output == NULL || output->type != OT_OFFSET) return;
+
+    sprintf(cbuf, "daddr smc_%X%+i", (unsigned int)(section[smc->sec].start + smc->ofs), (int)(fixup->tofs - smc->ofs));
+    free(output->str);
+    output->str = strdup(cbuf);
+}
+
+static void SR_smc_collect(void)
+{
+    unsigned int index;
+    uint_fast32_t i;
+    char label[32];
+
+    for (index = 0; index < num_sections; index++)
+    {
+        section_fixup_list_ForEach(index, &SR_smc_collect_fixup, NULL);
+    }
+    if (smc_count == 0) return;
+
+    qsort(smc_list, smc_count, sizeof(smc_data), &SR_smc_compare);
+
+    for (index = 0; index < num_sections; index++)
+    {
+        section_fixup_list_ForEach(index, &SR_smc_fix_data_pointer, (void *)(uintptr_t) index);
+    }
+
+    for (i = 0; i < smc_count; i++)
+    {
+        SR_get_label(label, section[smc_list[i].sec].start + smc_list[i].ofs);
+        fprintf(stderr, "Self-modifying code: %s, bytes 0x%x written\n", label, (unsigned int) smc_list[i].written);
+    }
+}
+#endif
+
 int SR_full_disassembly(void)
 {
     unsigned int index;
@@ -700,6 +860,13 @@ int SR_full_disassembly(void)
         }
     }
 
+#if (OUTPUT_TYPE == OUT_LLASM)
+    if (self_modifying_code)
+    {
+        SR_smc_collect();
+    }
+#endif
+
 #if ((OUTPUT_TYPE == OUT_X86) || (OUTPUT_TYPE == OUT_LLASM) || (OUTPUT_TYPE == OUT_X64))
     // align code and data in code segments
     for (index = 0; index < num_sections; index++)
@@ -717,6 +884,14 @@ int SR_full_disassembly(void)
         ER.isregion = -1;
 
         section_output_list_ForEach(index, &SR_disassemble_create_aligns_data, (void *) &ER);
+    }
+#endif
+
+#if (OUTPUT_TYPE == OUT_LLASM)
+    // the data an instruction replacement names (loc_X in its text) gets a label
+    for (index = 0; index < num_sections; index++)
+    {
+        section_replace_list_ForEach(index, &SR_label_replacement_data, NULL);
     }
 #endif
 
