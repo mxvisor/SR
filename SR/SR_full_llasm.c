@@ -150,6 +150,14 @@ int SR_disassemble_region_llasm(unsigned int Entry, region_data *region)
                 return 5;
             }
 
+            if ((ud_obj.pfx_rep || ud_obj.pfx_repe || ud_obj.pfx_repne) &&
+                (ud_obj.mnemonic == UD_Icmpsb || ud_obj.mnemonic == UD_Icmpsw || ud_obj.mnemonic == UD_Icmpsd ||
+                 ud_obj.mnemonic == UD_Iscasb || ud_obj.mnemonic == UD_Iscasw || ud_obj.mnemonic == UD_Iscasd))
+            {
+                // with ecx == 0 the instruction leaves the flags untouched, so the earlier writers are still needed
+                flags_read |= flags_write;
+            }
+
             iflags = section_iflags_list_FindEntryEqual(Entry, cur_ofs);
             if (iflags)
             {
